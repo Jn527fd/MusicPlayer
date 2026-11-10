@@ -1,0 +1,174 @@
+﻿<Window x:Class="MusicPlayer.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:MusicPlayer"
+        mc:Ignorable="d"
+        Title="MusicPlayer" 
+        Height="1000"
+        Width="1600"
+        MinHeight="500" 
+        MinWidth="800"
+        WindowStartupLocation="CenterScreen"
+        Background="#181820"
+        Foreground="White">
+    <Grid Margin="25">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- TOP MENU BAR -->
+        <Menu Grid.Row="0"
+                Background="#303543"
+                Foreground="White">
+
+                <!-- file menu -->
+                <MenuItem Header="_File">
+                        <MenuItem Header="Open File..."
+                                  Click="OpenFile_Click"/>
+                        <MenuItem Header="Open Folder..."
+                                  Click="OpenFolder_Click"/>
+                        <Separator/>
+                
+                        <MenuItem Header="Set Default Folder..."
+                                  Click="SetDefaultFolder_Click"/>
+                        <MenuItem Header="Clear Default Folder"
+                                  Click="ClearDefaultFolder_Click"/>
+                </MenuItem>
+                
+                <!-- sound menu -->
+                <MenuItem Header="_Sound">
+                        <MenuItem Header="Equalizer..."
+                                  Click="Equalizer_Click"/>
+                        <Separator/>
+
+                        <MenuItem Header="Presets"
+                                  IsEnabled="False">
+
+                                <MenuItem Header="Flat"/>
+                                <MenuItem Header="Bass Boost"/>
+                        </MenuItem>
+                        <Separator/>
+
+                        <MenuItem Header="Save Custom Preset..."
+                                  IsEnabled="False"/>
+                        
+                        <MenuItem Header="Manage Presets..."
+                                  IsEnabled="False"/>
+                        
+                </MenuItem>
+
+                <!-- help menu -->
+                <MenuItem Header="_Help"/>
+        </Menu>
+
+        <!-- MUSIC LIBRARY-->
+        <Grid Grid.Row="1" Margin="20">
+                <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- current folder -->
+                <TextBlock x:Name="FolderText"
+                           Grid.Row="0"
+                           Text="No music folder selected"
+                           FontSize="16"
+                           Foreground="White"
+                           TextWrapping="Wrap"/>
+                
+               <!-- number of songs -->
+               <TextBlock x:Name="CountText"
+                          Grid.Row="1"
+                          Text="0 songs"
+                          Foreground="#AAAAAA"
+                          Margin="0,8,0,12"/>
+
+                <!-- song list -->
+                <ListBox x:Name="SongList"
+                         Grid.Row="2"
+                         DisplayMemberPath="Name"
+                         SelectionChanged="SongList_SelectionChanged"
+                         Background="#252A38"
+                         Foreground="White"
+                         BorderBrush="#414A60"
+                         FontSize="14"
+                         Padding="8"/>
+        </Grid>
+
+        <!-- PLAYBACK PANEL -->
+        <Border Grid.Row="2"
+                Background="#252A38"
+                Padding="16">
+
+                <StackPanel>
+                        <!-- current selected song -->
+                        <TextBlock x:Name="NowPlayingText"
+                                   Text="No song selected"
+                                   Foreground="White"
+                                   FontSize="14"
+                                   TextTrimming="CharacterEllipsis"
+                                   Margin="0,0,0,12"/>
+                        
+                        <!-- playback button -->
+                        <StackPanel Orientation="Horizontal">
+                                <Button x:Name="PlayButton"
+                                        Content="Play"
+                                        Click="Play_Click"
+                                        IsEnabled="False"
+                                        Width="75"
+                                        Margin="0,0,8,0"/>
+
+                                <Button x:Name="PauseButton"
+                                        Content="Pause"
+                                        Click="Pause_Click"
+                                        IsEnabled="False"
+                                        Width="75"
+                                        Margin="0,0,8,0"/>
+
+                                <Button x:Name="StopButton"
+                                        Content="Stop"
+                                        Click="Stop_Click"
+                                        IsEnabled="False"
+                                        Width="75"/>
+                        </StackPanel>
+
+                <StackPanel Orientation="Horizontal"
+                            Margin="0,15,0,0">
+                                
+                        <TextBlock Text="Volume"
+                                        Foreground="White"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,10,0"/>
+                        
+                        <Slider x:Name="VolumeSlider"
+                                Minimum="0"
+                                Maximum="100"
+                                Value="50"
+                                Width="175"
+                                VerticalAlignment="Center"
+                                ValueChanged="VolumeSlider_ValueChanged"/>
+                        
+                        <TextBlock x:Name="VolumeText"
+                                        Foreground="#CCCCCC"
+                                        VerticalAlignment="Center"
+                                        Margin="10,0,10,0"/>
+                        
+                        <Button x:Name="MuteButton"
+                                Content="Mute"
+                                Click="Mute_Click"
+                                Width="75"/>
+                </StackPanel>
+
+                <TextBlock x:Name="StatusText"
+                        Text="Open a file or folder to begin"
+                        Foreground="#AAAAAA"
+                        Margin="0,12,0,0"/>
+          </StackPanel>
+        </Border>                                   
+    </Grid>
+</Window>
