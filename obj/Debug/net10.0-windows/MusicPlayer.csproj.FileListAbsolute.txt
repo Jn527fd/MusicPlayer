@@ -6,7 +6,6 @@ C:\Users\naran\OneDrive\Desktop\MusicPlayer\bin\Debug\net10.0-windows\MusicPlaye
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MainWindow.g.cs
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\App.g.cs
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer_MarkupCompile.cache
-C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer_MarkupCompile.lref
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MainWindow.baml
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer.g.resources
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer.GeneratedMSBuildEditorConfig.editorconfig
@@ -26,3 +25,4 @@ C:\Users\naran\OneDrive\Desktop\MusicPlayer\bin\Debug\net10.0-windows\NAudio.Win
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\bin\Debug\net10.0-windows\System.Numerics.Tensors.dll
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer.csproj.AssemblyReference.cache
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPla.163160C2.Up2Date
+C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer.sourcelink.json

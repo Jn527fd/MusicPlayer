@@ -1,515 +1,498 @@
-﻿
 using Microsoft.Win32;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace MusicPlayer;
 
 public partial class MainWindow : Window
 {
-    // ==========================
-    // FIELDS
-    // ==========================
-
-    // Audio playback object
     private readonly MediaPlayer _player = new();
+    private readonly Random _random = new();
 
-    // Directory for application settings
     private readonly string _settingsDirectory = Path.Combine(
-        Environment.GetFolderPath(
-            Environment.SpecialFolder.LocalApplicationData),
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
         "MusicPlayer");
 
-    // Current music folder
+    private List<SongFile> _songs = new();
+    private List<SongFile> _visibleSongs = new();
     private string? _currentFolder;
+    private SongFile? _currentSong;
 
-    // Tracks whether audio is ready
-    private bool _mediaReady = false;
-
-
-    // ==========================
-    // CONSTRUCTOR
-    // ==========================
+    private bool _windowReady;
+    private bool _ignoreSelectionChanged;
+    private bool _mediaReady;
+    private bool _isPlaying;
+    private bool _playWhenOpened;
+    private bool _shuffleEnabled;
+    private bool _repeatEnabled;
+    private bool _isMuted;
 
     public MainWindow()
     {
         InitializeComponent();
+        _windowReady = true;
 
-        // Initial volume: 50%
-        _player.Volume = 0.5;
-        UpdateVolumeText();
+        _player.Volume = VolumeSlider.Value / 100.0;
+        UpdateVolumeDisplay();
+        UpdatePlayIcon();
+        UpdateButtons();
 
-        // Media opened successfully
         _player.MediaOpened += (_, _) =>
         {
             _mediaReady = true;
+            UpdateButtons();
 
-            SetPlaybackButtons(true);
-
-            StatusText.Text = "Ready to play";
+            if (_playWhenOpened)
+            {
+                StartPlayback();
+            }
+            else
+            {
+                StatusText.Text = "Ready to play";
+            }
         };
 
-        // Song reached the end
         _player.MediaEnded += (_, _) =>
         {
-            _player.Stop();
-
-            StatusText.Text = "Song finished";
+            if (_repeatEnabled && _currentSong != null)
+            {
+                _player.Position = TimeSpan.Zero;
+                StartPlayback();
+            }
+            else
+            {
+                MoveSong(1, fromSongEnd: true);
+            }
         };
 
-        // Failed to open or play audio
         _player.MediaFailed += (_, e) =>
         {
             _mediaReady = false;
-
-            SetPlaybackButtons(false);
-
-            StatusText.Text =
-                $"Playback error: {e.ErrorException.Message}";
+            _isPlaying = false;
+            _playWhenOpened = false;
+            StatusText.Text = $"Playback error: {e.ErrorException?.Message ?? "Unknown error"}";
+            UpdatePlayIcon();
+            UpdateButtons();
         };
 
-        // Load saved music folder on startup
         LoadDefaultFolder();
     }
 
+    // FILE MENU -----------------------------------------------------------
 
-    // ==========================
-    // FILE MENU
-    // ==========================
-
-    // Open one file and scan its folder
-    private void OpenFile_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void OpenFile_Click(object sender, RoutedEventArgs e)
     {
         OpenFileDialog dialog = new()
         {
             Title = "Select a song",
-            Filter = "Audio Files|*.mp3;*.wav"
+            Filter = "Audio files|*.mp3;*.wav"
         };
 
         if (Directory.Exists(_currentFolder))
-        {
             dialog.InitialDirectory = _currentFolder;
-        }
 
         if (dialog.ShowDialog(this) != true)
             return;
 
-        string? folder =
-            Path.GetDirectoryName(dialog.FileName);
-
+        string? folder = Path.GetDirectoryName(dialog.FileName);
         if (folder != null)
-        {
             LoadFolder(folder, dialog.FileName);
-        }
     }
 
-
-    // Open folder containing music
-    private void OpenFolder_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void OpenFolder_Click(object sender, RoutedEventArgs e)
     {
-        OpenFolderDialog dialog = new()
-        {
-            Title = "Select music folder"
-        };
-
+        OpenFolderDialog dialog = new() { Title = "Select music folder" };
         if (dialog.ShowDialog(this) == true)
-        {
             LoadFolder(dialog.FolderName);
-        }
     }
 
-
-    // Save the default music folder
-    private void SetDefaultFolder_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void SetDefaultFolder_Click(object sender, RoutedEventArgs e)
     {
-        OpenFolderDialog dialog = new()
-        {
-            Title = "Select default music folder"
-        };
-
-        if (dialog.ShowDialog(this) != true)
-            return;
-
-        // Load and validate folder
-        if (!LoadFolder(dialog.FolderName))
+        OpenFolderDialog dialog = new() { Title = "Select default music folder" };
+        if (dialog.ShowDialog(this) != true || !LoadFolder(dialog.FolderName))
             return;
 
         try
         {
-            // Ensure settings directory exists
-            Directory.CreateDirectory(
-                _settingsDirectory);
-
-            string settingsFile = Path.Combine(
-                _settingsDirectory,
-                "default-folder.txt");
-
-            // Save selected folder path
-            File.WriteAllText(
-                settingsFile,
-                dialog.FolderName);
-
+            Directory.CreateDirectory(_settingsDirectory);
+            File.WriteAllText(DefaultFolderSettingsFile, dialog.FolderName);
             StatusText.Text = "Default folder saved";
         }
-        catch (IOException ex)
-        {
-            ShowError(ex.Message);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            ShowError(ex.Message);
-        }
+        catch (IOException ex) { ShowError(ex.Message); }
+        catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
     }
 
-
-    // Remove saved default folder
-    private void ClearDefaultFolder_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void ClearDefaultFolder_Click(object sender, RoutedEventArgs e)
     {
-        string settingsFile = Path.Combine(
-            _settingsDirectory,
-            "default-folder.txt");
-
         try
         {
-            if (File.Exists(settingsFile))
-            {
-                File.Delete(settingsFile);
-            }
+            if (File.Exists(DefaultFolderSettingsFile))
+                File.Delete(DefaultFolderSettingsFile);
 
-            StatusText.Text = "Default folder cleared";
+            StatusText.Text = "Default folder cleared (current playlist kept)";
         }
-        catch (IOException ex)
-        {
-            ShowError(ex.Message);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            ShowError(ex.Message);
-        }
+        catch (IOException ex) { ShowError(ex.Message); }
+        catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
     }
 
+    private string DefaultFolderSettingsFile =>
+        Path.Combine(_settingsDirectory, "default-folder.txt");
 
-    // ==========================
-    // MUSIC LIBRARY
-    // ==========================
-
-    // Load the saved default folder
     private void LoadDefaultFolder()
     {
-        string settingsFile = Path.Combine(
-            _settingsDirectory,
-            "default-folder.txt");
-
-        if (!File.Exists(settingsFile))
-            return;
-
         try
         {
-            string folder =
-                File.ReadAllText(settingsFile);
+            if (!File.Exists(DefaultFolderSettingsFile))
+                return;
 
+            string folder = File.ReadAllText(DefaultFolderSettingsFile);
             if (Directory.Exists(folder))
-            {
                 LoadFolder(folder);
-            }
             else
-            {
-                StatusText.Text =
-                    "Default folder not found";
-            }
+                StatusText.Text = "Saved default folder no longer exists";
         }
-        catch (IOException ex)
-        {
-            ShowError(ex.Message);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            ShowError(ex.Message);
-        }
+        catch (IOException ex) { ShowError(ex.Message); }
+        catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
     }
 
+    // MUSIC LIBRARY AND SEARCH -------------------------------------------
 
-    // Find MP3/WAV files and populate playlist
-    private bool LoadFolder(
-        string folder,
-        string? selectedFile = null)
+    private bool LoadFolder(string folder, string? selectedFile = null)
     {
         try
         {
-            var songs = Directory
-                .EnumerateFiles(
-                    folder,
-                    "*",
-                    SearchOption.TopDirectoryOnly)
-
-                // Keep supported audio formats
-                .Where(file =>
-                    Path.GetExtension(file).Equals(
-                        ".mp3",
-                        StringComparison.OrdinalIgnoreCase)
-                    ||
-                    Path.GetExtension(file).Equals(
-                        ".wav",
-                        StringComparison.OrdinalIgnoreCase))
-
-                // Convert paths into SongFile objects
-                .Select(file => new SongFile(file))
-
-                // Sort alphabetically
-                .OrderBy(song => song.Name)
-
-                // Convert to a list
+            List<SongFile> files = Directory
+                .EnumerateFiles(folder, "*", SearchOption.TopDirectoryOnly)
+                .Where(path =>
+                    string.Equals(Path.GetExtension(path), ".mp3", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(Path.GetExtension(path), ".wav", StringComparison.OrdinalIgnoreCase))
+                .Select(path => new SongFile(path))
+                .OrderBy(song => song.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
-
-            // Update current folder
-            _currentFolder = folder;
-
-            // Update interface
-            FolderText.Text = folder;
-            CountText.Text = $"{songs.Count} songs";
-
-            // Reset the previous audio
             _player.Close();
-
             _mediaReady = false;
+            _isPlaying = false;
+            _playWhenOpened = false;
+            _currentSong = null;
+            _currentFolder = folder;
+            _songs = files;
 
-            SetPlaybackButtons(false);
+            FolderText.Text = folder;
+            NowPlayingText.Text = "No song selected";
+            StatusText.Text = files.Count == 0
+                ? "No MP3 or WAV files in this folder"
+                : "Select a song and press Play";
 
-            NowPlayingText.Text =
-                "No song selected";
+            // Clear any old search when switching folders.
+            SearchBox.Clear();
+            RefreshSongList();
 
-            // Populate the playlist
-            SongList.ItemsSource = songs;
+            SongFile? firstSong = files.FirstOrDefault(song =>
+                string.Equals(song.FullPath, selectedFile,
+                    StringComparison.OrdinalIgnoreCase)) ?? files.FirstOrDefault();
 
-            // Select requested song or first available
-            SongList.SelectedItem =
-                songs.FirstOrDefault(song =>
-                    string.Equals(
-                        song.FullPath,
-                        selectedFile,
-                        StringComparison.OrdinalIgnoreCase))
-                ?? songs.FirstOrDefault();
+            if (firstSong != null)
+                SongList.SelectedItem = firstSong;
 
-            if (songs.Count == 0)
-            {
-                StatusText.Text =
-                    "No MP3 or WAV files found";
-            }
-
+            UpdatePlayIcon();
+            UpdateButtons();
             return true;
         }
-        catch (IOException ex)
-        {
-            ShowError(ex.Message);
-            return false;
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            ShowError(ex.Message);
-            return false;
-        }
+        catch (IOException ex) { ShowError(ex.Message); }
+        catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
+
+        return false;
     }
 
+    private void SearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        // XAML can raise this event while InitializeComponent is running.
+        if (!_windowReady)
+            return;
 
-    // Called when the selected song changes
-    private void SongList_SelectionChanged(
-        object sender,
-        SelectionChangedEventArgs e)
+        SearchHint.Visibility = string.IsNullOrEmpty(SearchBox.Text)
+            ? Visibility.Visible : Visibility.Collapsed;
+
+        RefreshSongList();
+    }
+
+    private void RefreshSongList()
+    {
+        string query = SearchBox.Text.Trim();
+        SongFile? previousSelection = SongList.SelectedItem as SongFile;
+
+        _visibleSongs = _songs
+            .Where(song => song.Name.Contains(query, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        _ignoreSelectionChanged = true;
+        SongList.ItemsSource = _visibleSongs;
+        if (previousSelection != null && _visibleSongs.Contains(previousSelection))
+            SongList.SelectedItem = previousSelection;
+        else if (_currentSong != null && _visibleSongs.Contains(_currentSong))
+            SongList.SelectedItem = _currentSong;
+        _ignoreSelectionChanged = false;
+
+        CountText.Text = query.Length == 0
+            ? $"{_songs.Count} songs"
+            : $"{_visibleSongs.Count} of {_songs.Count} songs";
+
+        UpdateButtons();
+    }
+
+    private void SongList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_ignoreSelectionChanged || SongList.SelectedItem is not SongFile song)
+            return;
+
+        if (_currentSong != song)
+            OpenSong(song, playImmediately: false);
+    }
+
+    private void SongList_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         if (SongList.SelectedItem is not SongFile song)
             return;
 
-        // Stop and close previous media
-        _player.Close();
-
-        _mediaReady = false;
-
-        SetPlaybackButtons(false);
-
-        // Update now-playing label
-        NowPlayingText.Text = song.Name;
-
-        StatusText.Text = "Loading...";
-
-        // Open selected audio file
-        _player.Open(
-            new Uri(
-                song.FullPath,
-                UriKind.Absolute));
+        if (_currentSong == song)
+        {
+            _playWhenOpened = true;
+            if (_mediaReady)
+                StartPlayback();
+        }
+        else
+        {
+            OpenSong(song, playImmediately: true);
+        }
     }
 
+    // AUDIO PLAYBACK ------------------------------------------------------
 
-    // ==========================
-    // PLAYBACK CONTROLS
-    // ==========================
+    private void OpenSong(SongFile song, bool playImmediately)
+    {
+        _currentSong = song;
+        _playWhenOpened = playImmediately;
+        _mediaReady = false;
+        _isPlaying = false;
+        _player.Close();
 
-    private void Play_Click(
-        object sender,
-        RoutedEventArgs e)
+        // Preserve the user's audio preferences when changing tracks.
+        _player.Volume = VolumeSlider.Value / 100.0;
+        _player.IsMuted = _isMuted;
+
+        NowPlayingText.Text = song.Name;
+        StatusText.Text = "Loading...";
+
+        // Keep the playlist selection in sync without reopening the song.
+        if (_visibleSongs.Contains(song) && SongList.SelectedItem != song)
+        {
+            _ignoreSelectionChanged = true;
+            SongList.SelectedItem = song;
+            _ignoreSelectionChanged = false;
+        }
+
+        UpdatePlayIcon();
+        UpdateButtons();
+        _player.Open(new Uri(song.FullPath, UriKind.Absolute));
+    }
+
+    private void PlayPause_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_mediaReady)
+            return;
+
+        if (_isPlaying)
+        {
+            _player.Pause();
+            _isPlaying = false;
+            StatusText.Text = "Paused";
+            UpdatePlayIcon();
+        }
+        else
+        {
+            StartPlayback();
+        }
+    }
+
+    private void StartPlayback()
     {
         if (!_mediaReady)
             return;
 
         _player.Play();
-
+        _isPlaying = true;
+        _playWhenOpened = false;
         StatusText.Text = "Playing";
+        UpdatePlayIcon();
     }
 
-
-    private void Pause_Click(
-        object sender,
-        RoutedEventArgs e)
-    {
-        if (!_mediaReady)
-            return;
-
-        _player.Pause();
-
-        StatusText.Text = "Paused";
-    }
-
-
-    private void Stop_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void Stop_Click(object sender, RoutedEventArgs e)
     {
         if (!_mediaReady)
             return;
 
         _player.Stop();
-
+        _isPlaying = false;
         StatusText.Text = "Stopped";
+        UpdatePlayIcon();
     }
 
+    private void Previous_Click(object sender, RoutedEventArgs e) => MoveSong(-1);
+    private void Next_Click(object sender, RoutedEventArgs e) => MoveSong(1);
 
-    // Enable or disable playback buttons
-    private void SetPlaybackButtons(bool enabled)
+    private void MoveSong(int direction, bool fromSongEnd = false)
     {
-        PlayButton.IsEnabled = enabled;
-        PauseButton.IsEnabled = enabled;
-        StopButton.IsEnabled = enabled;
+        // When searching, previous/next navigate the visible results.
+        if (_visibleSongs.Count == 0)
+        {
+            FinishPlayback();
+            return;
+        }
+
+        int currentIndex = _currentSong == null
+            ? -1 : _visibleSongs.IndexOf(_currentSong);
+        int nextIndex;
+
+        if (_shuffleEnabled && _visibleSongs.Count > 1)
+        {
+            do { nextIndex = _random.Next(_visibleSongs.Count); }
+            while (nextIndex == currentIndex);
+        }
+        else
+        {
+            // Automatic playback ends after the last song unless Repeat is on.
+            if (fromSongEnd && currentIndex == _visibleSongs.Count - 1)
+            {
+                FinishPlayback();
+                return;
+            }
+
+            nextIndex = currentIndex < 0
+                ? (direction > 0 ? 0 : _visibleSongs.Count - 1)
+                : (currentIndex + direction + _visibleSongs.Count) % _visibleSongs.Count;
+        }
+
+        OpenSong(_visibleSongs[nextIndex], playImmediately: true);
     }
 
+    private void FinishPlayback()
+    {
+        _player.Stop();
+        _isPlaying = false;
+        StatusText.Text = "Playlist finished";
+        UpdatePlayIcon();
+    }
 
-    // ==========================
-    // VOLUME CONTROLS
-    // ==========================
+    private void Shuffle_Click(object sender, RoutedEventArgs e)
+    {
+        _shuffleEnabled = !_shuffleEnabled;
+        ShuffleButton.Background = _shuffleEnabled ? ActiveButtonBrush : InactiveButtonBrush;
+        ShuffleButton.ToolTip = _shuffleEnabled ? "Shuffle: On" : "Shuffle: Off";
+    }
 
-    // Called when the volume slider changes
+    private void Repeat_Click(object sender, RoutedEventArgs e)
+    {
+        _repeatEnabled = !_repeatEnabled;
+        RepeatButton.Background = _repeatEnabled ? ActiveButtonBrush : InactiveButtonBrush;
+        RepeatButton.ToolTip = _repeatEnabled
+            ? "Repeat current song: On" : "Repeat current song: Off";
+    }
+
+    private static readonly Brush ActiveButtonBrush =
+        new SolidColorBrush(Color.FromRgb(57, 127, 189));
+    private static readonly Brush InactiveButtonBrush =
+        new SolidColorBrush(Color.FromRgb(45, 53, 69));
+
+    private void UpdatePlayIcon()
+    {
+        PlayPauseIcon.Data = Geometry.Parse(_isPlaying
+            ? "M7,5 L11,5 L11,19 L7,19 Z M15,5 L19,5 L19,19 L15,19 Z"
+            : "M8,5 L20,12 L8,19 Z");
+        PlayPauseButton.ToolTip = _isPlaying ? "Pause" : "Play";
+    }
+
+    private void UpdateButtons()
+    {
+        PlayPauseButton.IsEnabled = _mediaReady;
+        StopButton.IsEnabled = _mediaReady;
+        PreviousButton.IsEnabled = _visibleSongs.Count > 1;
+        NextButton.IsEnabled = _visibleSongs.Count > 1;
+        ShuffleButton.IsEnabled = _songs.Count > 0;
+        RepeatButton.IsEnabled = _songs.Count > 0;
+    }
+
+    // VOLUME --------------------------------------------------------------
+
     private void VolumeSlider_ValueChanged(
-        object sender,
-        RoutedPropertyChangedEventArgs<double> e)
+        object sender, RoutedPropertyChangedEventArgs<double> e)
     {
-        // Prevent initialization errors
-        if (VolumeText is null)
+        if (!_windowReady)
             return;
 
-        // Convert 0-100 slider range to 0.0-1.0
         _player.Volume = e.NewValue / 100.0;
-
-        UpdateVolumeText();
+        UpdateVolumeDisplay();
     }
 
-
-    // Toggle mute/unmute
-    private void Mute_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void Mute_Click(object sender, RoutedEventArgs e)
     {
-        _player.IsMuted = !_player.IsMuted;
-
-        MuteButton.Content = _player.IsMuted
-            ? "Unmute"
-            : "Mute";
-
-        UpdateVolumeText();
+        _isMuted = !_isMuted;
+        _player.IsMuted = _isMuted;
+        UpdateVolumeDisplay();
     }
 
-
-    // Update displayed volume
-    private void UpdateVolumeText()
+    private void UpdateVolumeDisplay()
     {
-        VolumeText.Text = _player.IsMuted
-            ? "Volume: Muted"
-            : $"Volume: {_player.Volume:P0}";
+        VolumeText.Text = $"{VolumeSlider.Value:0}%";
+        MuteButton.ToolTip = _isMuted ? "Unmute" : "Mute";
+        SoundWavePath.Data = Geometry.Parse(_isMuted
+            ? "M15,9 L21,17 M21,9 L15,17"
+            : "M15,9 C18,10 18,14 15,15 M17,6 C23,9 23,15 17,18");
     }
 
+    // MENUS AND CLEANUP ---------------------------------------------------
 
-    // ==========================
-    // SOUND MENU
-    // ==========================
-
-    // Future equalizer feature
-    private void Equalizer_Click(
-        object sender,
-        RoutedEventArgs e)
+    private void Equalizer_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(
-            this,
-            "Equalizer settings will be implemented "
-            + "in a future version.",
-            "MusicPlayer Equalizer",
-            MessageBoxButton.OK,
+        MessageBox.Show(this,
+            "The equalizer and saved EQ presets will be added in a later version.",
+            "MusicPlayer Equalizer", MessageBoxButton.OK,
             MessageBoxImage.Information);
     }
 
-
-    // ==========================
-    // ERROR HANDLING
-    // ==========================
+    private void About_Click(object sender, RoutedEventArgs e)
+    {
+        MessageBox.Show(this,
+            "MusicPlayer — a C# / .NET WPF music player prototype.",
+            "About MusicPlayer", MessageBoxButton.OK,
+            MessageBoxImage.Information);
+    }
 
     private void ShowError(string message)
     {
-        MessageBox.Show(
-            this,
-            message,
-            "MusicPlayer",
-            MessageBoxButton.OK,
-            MessageBoxImage.Warning);
+        MessageBox.Show(this, message, "MusicPlayer",
+            MessageBoxButton.OK, MessageBoxImage.Warning);
     }
-
-
-    // ==========================
-    // APPLICATION CLEANUP
-    // ==========================
 
     protected override void OnClosed(EventArgs e)
     {
         _player.Close();
-
         base.OnClosed(e);
     }
 }
 
-
-// ==========================
-// SONG MODEL
-// ==========================
-
-// Represents one music file in the playlist
+// Represents one music file shown in the playlist.
 public class SongFile
 {
-    // Absolute path to the music file
     public string FullPath { get; }
+    public string Name => Path.GetFileName(FullPath);
 
-    // Filename without directory path
-    public string Name =>
-        Path.GetFileName(FullPath);
-
-    // Constructor
     public SongFile(string fullPath)
     {
         FullPath = fullPath;
