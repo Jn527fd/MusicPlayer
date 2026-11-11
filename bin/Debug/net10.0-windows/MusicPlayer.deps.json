@@ -8,7 +8,8 @@
     ".NETCoreApp,Version=v10.0": {
       "MusicPlayer/1.0.0": {
         "dependencies": {
-          "NAudio": "3.3.0"
+          "NAudio": "3.3.0",
+          "TagLibSharp": "2.3.0"
         },
         "runtime": {
           "MusicPlayer.dll": {}
@@ -80,6 +81,14 @@
             "fileVersion": "9.0.24.52809"
           }
         }
+      },
+      "TagLibSharp/2.3.0": {
+        "runtime": {
+          "lib/netstandard2.0/TagLibSharp.dll": {
+            "assemblyVersion": "2.3.0.0",
+            "fileVersion": "2.3.0.0"
+          }
+        }
       }
     }
   },
@@ -130,6 +139,13 @@
       "sha512": "sha512-hyJB4UlpAi19Xr9AXzu2NuagKC4lPfHObNMEAA0HmqFz2rX7wKgzeYzO/jM/eBHDhnUGFFEjk5cOoJaxqg5J4A==",
       "path": "system.numerics.tensors/9.0.0",
       "hashPath": "system.numerics.tensors.9.0.0.nupkg.sha512"
+    },
+    "TagLibSharp/2.3.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Qo4z6ZjnIfbR3Us1Za5M2vQ97OWZPmODvVmepxZ8XW0UIVLGdO2T63/N3b23kCcyiwuIe0TQvMEQG8wUCCD1mA==",
+      "path": "taglibsharp/2.3.0",
+      "hashPath": "taglibsharp.2.3.0.nupkg.sha512"
     }
   }
 }

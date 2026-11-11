@@ -49,6 +49,10 @@
             "NAudio": {
               "target": "Package",
               "version": "[3.3.0, )"
+            },
+            "TagLibSharp": {
+              "target": "Package",
+              "version": "[2.3.0, )"
             }
           },
           "imports": [

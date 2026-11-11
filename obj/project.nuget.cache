@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "4VGeHwXJU1Q=",
+  "dgSpecHash": "4OT/XaKbuu8=",
   "success": true,
   "projectFilePath": "C:\\Users\\naran\\OneDrive\\Desktop\\MusicPlayer\\MusicPlayer.csproj",
   "expectedPackageFiles": [
@@ -9,7 +9,8 @@
     "C:\\Users\\naran\\.nuget\\packages\\naudio.midi\\3.3.0\\naudio.midi.3.3.0.nupkg.sha512",
     "C:\\Users\\naran\\.nuget\\packages\\naudio.wasapi\\3.3.0\\naudio.wasapi.3.3.0.nupkg.sha512",
     "C:\\Users\\naran\\.nuget\\packages\\naudio.winmm\\3.3.0\\naudio.winmm.3.3.0.nupkg.sha512",
-    "C:\\Users\\naran\\.nuget\\packages\\system.numerics.tensors\\9.0.0\\system.numerics.tensors.9.0.0.nupkg.sha512"
+    "C:\\Users\\naran\\.nuget\\packages\\system.numerics.tensors\\9.0.0\\system.numerics.tensors.9.0.0.nupkg.sha512",
+    "C:\\Users\\naran\\.nuget\\packages\\taglibsharp\\2.3.0\\taglibsharp.2.3.0.nupkg.sha512"
   ],
   "logs": []
 }

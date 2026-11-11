@@ -53,6 +53,7 @@
             <Setter Property="Padding" Value="11,8"/>
             <Setter Property="Foreground" Value="#E9EDF5"/>
             <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ListBoxItem">
@@ -156,20 +157,118 @@
         <Grid Grid.Row="1" Margin="20,18,20,14">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
 
-            <TextBlock x:Name="CountText" Grid.Row="1"
+            <TextBlock x:Name="CountText" Grid.Row="0"
                        Text="0 songs" Foreground="#9EADBF"
                        Margin="0,7,0,12"/>
 
+            <Grid Grid.Row="1" Margin="12, 0, 12, 8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="74"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="90"/>
+                    <ColumnDefinition Width="90"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0"
+                           Text="Image"
+                           Foreground="#AABBC9"/>
+
+                <TextBlock Grid.Column="1"
+                           Text="Song Name"
+                           Foreground="#AABBC9"/>
+
+                <TextBlock Grid.Column="2"
+                           Text="BPM"
+                           Foreground="#AABBC9"
+                           TextAlignment="Center"/>
+
+                <TextBlock Grid.Column="3"
+                           Text="Length"
+                           Foreground="#AABBC9"
+                           TextAlignment="Center"/>
+            </Grid>
+
             <ListBox x:Name="SongList" Grid.Row="2"
-                     Background="#1D2430" Foreground="#E9EDF5"
-                     BorderBrush="#38465A" BorderThickness="1"
-                     Padding="5" FontSize="14"
-                     DisplayMemberPath="Name"
+                     Background="#1D2430" 
+                     Foreground="#E9EDF5"
+                     BorderBrush="#38465A" 
+                     BorderThickness="1"
+                     Padding="5" 
                      SelectionChanged="SongList_SelectionChanged"
-                     MouseDoubleClick="SongList_MouseDoubleClick"/>
+                     MouseDoubleClick="SongList_MouseDoubleClick"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <!-- each song has its own boardered card -->
+                        <Border BorderBrush="#43516A"
+                                 BorderThickness="1"
+                                 Background="Transparent"
+                                 CornerRadius="6"
+                                 Padding="8"
+                                 Margin="2,4">
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="74"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="90"/>
+                                    <ColumnDefinition Width="90"/>
+                                </Grid.ColumnDefinitions>
+
+                                <!-- clickable album artwork -->
+                                <Button Grid.Column="0"
+                                        Width="55"
+                                        Height="55"
+                                        Padding="0"
+                                        Background="#414D60"
+                                        BorderThickness="0"
+                                        Cursor="Hand"
+                                        ToolTip="Change album artwork"
+                                        Tag="{Binding}"
+                                        Click="Artwork_Click">
+                                    
+                                    <Grid> 
+                                        <TextBlock Text="+ Art"
+                                                    Foreground="White"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"/>
+                                        
+                                        <Image Source="{Binding Artwork}"
+                                               Stretch="UniformToFIll"/>
+                                    </Grid>
+                                </Button>
+
+                                <!-- song name -->
+                                <TextBlock Grid.Column="1"
+                                           Text="{Binding Name}"
+                                           Foreground="White"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis"
+                                           Margin="8,0"/>
+
+                                <!-- beats per minute -->
+                                <TextBlock Grid.Column="2"
+                                           Text="{Binding BpmText}"
+                                           Foreground="#B5C1D0"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/>
+
+                                <!-- song duration -->
+                                <TextBlock Grid.Column="3"
+                                           Text="{Binding LengthText}"
+                                           Foreground="#B5C1D0"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"/> 
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
         </Grid>
 
         <!-- BOTTOM: shuffle, repeat, stop, previous, play/pause, next, volume -->

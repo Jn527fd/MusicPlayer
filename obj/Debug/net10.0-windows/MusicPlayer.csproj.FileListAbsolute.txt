@@ -26,3 +26,4 @@ C:\Users\naran\OneDrive\Desktop\MusicPlayer\bin\Debug\net10.0-windows\System.Num
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer.csproj.AssemblyReference.cache
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPla.163160C2.Up2Date
 C:\Users\naran\OneDrive\Desktop\MusicPlayer\obj\Debug\net10.0-windows\MusicPlayer.sourcelink.json
+C:\Users\naran\OneDrive\Desktop\MusicPlayer\bin\Debug\net10.0-windows\TagLibSharp.dll
