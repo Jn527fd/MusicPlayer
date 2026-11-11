@@ -105,14 +105,12 @@
                     <MenuItem Header="_File">
                         <MenuItem Header="Open File..." Click="OpenFile_Click"/>
                         <MenuItem Header="Open Folder..." Click="OpenFolder_Click"/>
-                        <Separator/>
                         <MenuItem Header="Set Default Folder..." Click="SetDefaultFolder_Click"/>
                         <MenuItem Header="Clear Default Folder" Click="ClearDefaultFolder_Click"/>
                     </MenuItem>
 
                     <MenuItem Header="_Sound">
                         <MenuItem Header="Equalizer..." Click="Equalizer_Click"/>
-                        <Separator/>
                         <MenuItem Header="Presets (coming later)" IsEnabled="False"/>
                         <MenuItem Header="Save Custom Preset..." IsEnabled="False"/>
                         <MenuItem Header="Manage Presets..." IsEnabled="False"/>
@@ -158,14 +156,8 @@
         <Grid Grid.Row="1" Margin="20,18,20,14">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-
-            <TextBlock x:Name="FolderText" Grid.Row="0"
-                       Text="No music folder selected"
-                       FontSize="18" FontWeight="SemiBold"
-                       TextWrapping="Wrap"/>
 
             <TextBlock x:Name="CountText" Grid.Row="1"
                        Text="0 songs" Foreground="#9EADBF"
@@ -187,6 +179,7 @@
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                 </Grid.RowDefinitions>
 
                 <Grid Grid.Row="0" Margin="2,0,2,12">
@@ -196,13 +189,43 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock x:Name="NowPlayingText" Text="No song selected"
                                TextTrimming="CharacterEllipsis" FontWeight="SemiBold"/>
-                    <TextBlock x:Name="StatusText" Grid.Column="1"
-                               Text="Open a file or folder to begin"
-                               Foreground="#9EADBF" Margin="14,0,0,0"
-                               FontSize="12"/>
                 </Grid>
 
-                <Grid Grid.Row="1">
+                <Grid Grid.Row="1" Margin="2,0,2,13">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="48"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="48"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- elapsed time -->
+                    <TextBlock x:Name="ElapsedTimeText"
+                               Grid.Column="0"
+                               Text="0:00"
+                               Foreground="#B5C1D0"
+                               VerticalAlignment="Center"/>
+
+                    <!-- seek slider -->
+                    <Slider x:Name="SeekSlider"
+                            Grid.Column="1"
+                            Minimum="0"
+                            Maximum="1"
+                            Value="0"
+                            IsEnabled="False"
+                            IsMoveToPointEnabled="True"
+                            VerticalAlignment="Center"
+                            ValueChanged="SeekSlider_ValueChanged"/>
+
+                    <!-- total song duration-->
+                    <TextBlock x:Name="DurationText"
+                               Grid.Column="2"
+                               Text="0:00"
+                               Foreground="#B5C1D0"
+                               TextAlignment="Right"
+                               VerticalAlignment="Center"/>
+                </Grid> 
+
+                <Grid Grid.Row="2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*"/>
                         <ColumnDefinition Width="Auto"/>
@@ -227,11 +250,11 @@
                                   Data="M5,9 C5,6 7,5 10,5 L19,5 M16,2 L19,5 L16,8 M19,15 C19,18 17,19 14,19 L5,19 M8,16 L5,19 L8,22"/>
                         </Button>
 
-                        <Button x:Name="StopButton" Style="{StaticResource TransportButtonStyle}"
-                                ToolTip="Stop" Click="Stop_Click" IsEnabled="False">
-                            <Path Width="15" Height="15" Stretch="Uniform"
-                                  Fill="#F0F5FA" Data="M4,4 L20,4 L20,20 L4,20 Z"/>
-                        </Button>
+                        <Border Width="1"
+                                Height="26"
+                                Background="#64748B"
+                                Margin="12,0,12,0"
+                                VerticalAlignment="Center"/>
 
                         <Button x:Name="PreviousButton" Style="{StaticResource TransportButtonStyle}"
                                 ToolTip="Previous song" Click="Previous_Click" IsEnabled="False">
@@ -253,33 +276,40 @@
                                   Fill="#F0F5FA"
                                   Data="M18,5 L20,5 L20,19 L18,19 Z M5,5 L16,12 L5,19 Z"/>
                         </Button>
-                    </StackPanel>
 
-                    <!-- Volume remains on the right, like a classic player -->
-                    <StackPanel Grid.Column="2" Orientation="Horizontal"
-                                HorizontalAlignment="Right" VerticalAlignment="Center">
-                        <Button x:Name="MuteButton" Style="{StaticResource TransportButtonStyle}"
-                                Width="34" Height="34" Margin="0,0,6,0"
-                                ToolTip="Mute" Click="Mute_Click">
-                            <Grid Width="23" Height="23">
-                                <Path Fill="#F0F5FA"
-                                      Data="M3,9 L7,9 L12,5 L12,19 L7,15 L3,15 Z"/>
-                                <Path x:Name="SoundWavePath" Stroke="#F0F5FA"
-                                      StrokeThickness="1.9" StrokeStartLineCap="Round"
-                                      StrokeEndLineCap="Round"
-                                      Data="M15,9 C18,10 18,14 15,15 M17,6 C23,9 23,15 17,18"/>
-                            </Grid>
-                        </Button>
-                        <Slider x:Name="VolumeSlider" Width="110"
-                                Minimum="0" Maximum="100" Value="50"
-                                VerticalAlignment="Center"
-                                ToolTip="Volume"
-                                ValueChanged="VolumeSlider_ValueChanged"/>
-                        <TextBlock x:Name="VolumeText" Text="50%"
-                                   Width="38" TextAlignment="Right"
-                                   Foreground="#B5C1D0" FontSize="12"
-                                   VerticalAlignment="Center" Margin="7,0,0,0"/>
-                    </StackPanel>
+                        <Border Width="1"
+                                Height="26"
+                                Background="#64748B"
+                                Margin="12,0,12,0"
+                                VerticalAlignment="Center"/>
+
+                        <StackPanel Orientation="Horizontal"
+                                HorizontalAlignment="Center"
+                                Margin="15,0,0,0">
+                            <Button x:Name="MuteButton" Style="{StaticResource TransportButtonStyle}"
+                                    Width="34" Height="34" Margin="0,0,6,0"
+                                    ToolTip="Mute" Click="Mute_Click">
+                                <Grid Width="23" Height="23">
+                                    <Path Fill="#F0F5FA"
+                                        Data="M3,9 L7,9 L12,5 L12,19 L7,15 L3,15 Z"/>
+                                    <Path x:Name="SoundWavePath" Stroke="#F0F5FA"
+                                        StrokeThickness="1.9" StrokeStartLineCap="Round"
+                                        StrokeEndLineCap="Round"
+                                        Data="M15,9 C18,10 18,14 15,15 M17,6 C23,9 23,15 17,18"/>
+                                </Grid>
+                            </Button>
+                            <Slider x:Name="VolumeSlider" Width="110"
+                                    Minimum="0" Maximum="100" Value="100"
+                                    VerticalAlignment="Center"
+                                    ToolTip="Volume"
+                                    ValueChanged="VolumeSlider_ValueChanged"
+                                    IsMoveToPointEnabled="True"/>
+                            <TextBlock x:Name="VolumeText" Text="100%"
+                                    Width="38" TextAlignment="Right"
+                                    Foreground="#B5C1D0" FontSize="12"
+                                    VerticalAlignment="Center" Margin="7,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>                    
                 </Grid>
             </Grid>
         </Border>

@@ -1,12 +1,14 @@
 using Microsoft.Win32;
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
-using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Controls;
+using System.Windows.Threading;
+using System.Collections.Generic;
+using System.Windows.Controls.Primitives;
 
 namespace MusicPlayer;
 
@@ -14,6 +16,10 @@ public partial class MainWindow : Window
 {
     private readonly MediaPlayer _player = new();
     private readonly Random _random = new();
+    private readonly DispatcherTimer _seekTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(50)
+    };
 
     private readonly string _settingsDirectory = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -32,6 +38,9 @@ public partial class MainWindow : Window
     private bool _shuffleEnabled;
     private bool _repeatEnabled;
     private bool _isMuted;
+    private bool _updatingSeekSlider;
+    private bool _draggingSeekSlider;
+    private double _songDurationSeconds;
 
     public MainWindow()
     {
@@ -42,19 +51,25 @@ public partial class MainWindow : Window
         UpdateVolumeDisplay();
         UpdatePlayIcon();
         UpdateButtons();
+        ResetSeekBar();
+
+        _seekTimer.Tick += SeekTimer_Tick;
+        _seekTimer.Start();
+
+        SeekSlider.AddHandler(Thumb.DragStartedEvent,
+            new DragStartedEventHandler(SeekDragStarted), true);
+        SeekSlider.AddHandler(Thumb.DragCompletedEvent,
+            new DragCompletedEventHandler(SeekDragCompleted), true);
 
         _player.MediaOpened += (_, _) =>
         {
             _mediaReady = true;
+            SetSeekDuration();
             UpdateButtons();
 
             if (_playWhenOpened)
             {
                 StartPlayback();
-            }
-            else
-            {
-                StatusText.Text = "Ready to play";
             }
         };
 
@@ -76,7 +91,8 @@ public partial class MainWindow : Window
             _mediaReady = false;
             _isPlaying = false;
             _playWhenOpened = false;
-            StatusText.Text = $"Playback error: {e.ErrorException?.Message ?? "Unknown error"}";
+            ResetSeekBar();
+            ShowError($"Playback error: {e.ErrorException?.Message ?? "Unknown error"}");
             UpdatePlayIcon();
             UpdateButtons();
         };
@@ -122,7 +138,6 @@ public partial class MainWindow : Window
         {
             Directory.CreateDirectory(_settingsDirectory);
             File.WriteAllText(DefaultFolderSettingsFile, dialog.FolderName);
-            StatusText.Text = "Default folder saved";
         }
         catch (IOException ex) { ShowError(ex.Message); }
         catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
@@ -135,7 +150,6 @@ public partial class MainWindow : Window
             if (File.Exists(DefaultFolderSettingsFile))
                 File.Delete(DefaultFolderSettingsFile);
 
-            StatusText.Text = "Default folder cleared (current playlist kept)";
         }
         catch (IOException ex) { ShowError(ex.Message); }
         catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
@@ -154,8 +168,8 @@ public partial class MainWindow : Window
             string folder = File.ReadAllText(DefaultFolderSettingsFile);
             if (Directory.Exists(folder))
                 LoadFolder(folder);
-            else
-                StatusText.Text = "Saved default folder no longer exists";
+            else 
+                ShowError("Saved default folder no longer exists");
         }
         catch (IOException ex) { ShowError(ex.Message); }
         catch (UnauthorizedAccessException ex) { ShowError(ex.Message); }
@@ -184,12 +198,9 @@ public partial class MainWindow : Window
             _currentFolder = folder;
             _songs = files;
 
-            FolderText.Text = folder;
             NowPlayingText.Text = "No song selected";
-            StatusText.Text = files.Count == 0
-                ? "No MP3 or WAV files in this folder"
-                : "Select a song and press Play";
-
+            ResetSeekBar();
+          
             // Clear any old search when switching folders.
             SearchBox.Clear();
             RefreshSongList();
@@ -282,13 +293,13 @@ public partial class MainWindow : Window
         _mediaReady = false;
         _isPlaying = false;
         _player.Close();
+        ResetSeekBar();
 
         // Preserve the user's audio preferences when changing tracks.
         _player.Volume = VolumeSlider.Value / 100.0;
         _player.IsMuted = _isMuted;
 
         NowPlayingText.Text = song.Name;
-        StatusText.Text = "Loading...";
 
         // Keep the playlist selection in sync without reopening the song.
         if (_visibleSongs.Contains(song) && SongList.SelectedItem != song)
@@ -312,7 +323,6 @@ public partial class MainWindow : Window
         {
             _player.Pause();
             _isPlaying = false;
-            StatusText.Text = "Paused";
             UpdatePlayIcon();
         }
         else
@@ -329,18 +339,6 @@ public partial class MainWindow : Window
         _player.Play();
         _isPlaying = true;
         _playWhenOpened = false;
-        StatusText.Text = "Playing";
-        UpdatePlayIcon();
-    }
-
-    private void Stop_Click(object sender, RoutedEventArgs e)
-    {
-        if (!_mediaReady)
-            return;
-
-        _player.Stop();
-        _isPlaying = false;
-        StatusText.Text = "Stopped";
         UpdatePlayIcon();
     }
 
@@ -386,7 +384,6 @@ public partial class MainWindow : Window
     {
         _player.Stop();
         _isPlaying = false;
-        StatusText.Text = "Playlist finished";
         UpdatePlayIcon();
     }
 
@@ -421,12 +418,114 @@ public partial class MainWindow : Window
     private void UpdateButtons()
     {
         PlayPauseButton.IsEnabled = _mediaReady;
-        StopButton.IsEnabled = _mediaReady;
         PreviousButton.IsEnabled = _visibleSongs.Count > 1;
         NextButton.IsEnabled = _visibleSongs.Count > 1;
         ShuffleButton.IsEnabled = _songs.Count > 0;
         RepeatButton.IsEnabled = _songs.Count > 0;
     }
+
+    // PLAYBACK TIMELINE -----------------------------------------------------
+
+    private void SetSeekDuration()
+    {
+        if (!_player.NaturalDuration.HasTimeSpan)
+        {
+            ResetSeekBar();
+            return;
+        }
+
+        _songDurationSeconds = _player.NaturalDuration.TimeSpan.TotalSeconds;
+        SeekSlider.Maximum = Math.Max(1, _songDurationSeconds);
+        SeekSlider.IsEnabled = _songDurationSeconds > 0;
+        DurationText.Text = FormatTime(_player.NaturalDuration.TimeSpan);
+        UpdateSeekPosition();
+    }
+
+    private void ResetSeekBar()
+    {
+        _songDurationSeconds = 0;
+        _updatingSeekSlider = true;
+        SeekSlider.IsEnabled = false;
+        SeekSlider.Maximum = 1;
+        SeekSlider.Value = 0;
+        _updatingSeekSlider = false;
+        ElapsedTimeText.Text = "0:00";
+        DurationText.Text = "0:00";
+    }
+
+    private void SeekTimer_Tick(object? sender, EventArgs e)
+    {
+        if (_mediaReady && !_draggingSeekSlider)
+            UpdateSeekPosition();
+    }
+
+    private void UpdateSeekPosition()
+    {
+        if (!_mediaReady || _songDurationSeconds <= 0)
+            return;
+
+        double position = Math.Clamp(
+            _player.Position.TotalSeconds,
+            0,
+            _songDurationSeconds);
+
+        if (Math.Abs(SeekSlider.Value - position) > 0.01)
+        {
+            _updatingSeekSlider = true;
+
+            try
+            {
+                SeekSlider.Value = position;
+            }
+            finally
+            {
+                _updatingSeekSlider = false;
+            }
+        }
+
+        ElapsedTimeText.Text =
+            FormatTime(TimeSpan.FromSeconds(position));
+    }
+
+    private void SeekSlider_ValueChanged(
+        object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        // Ignore initialization and timer-driven slider changes.
+        if (!_windowReady || _updatingSeekSlider || !_mediaReady)
+            return;
+
+        ElapsedTimeText.Text = FormatTime(TimeSpan.FromSeconds(e.NewValue));
+        if (!_draggingSeekSlider)
+            SeekTo(e.NewValue); // Clicking the track seeks immediately.
+    }
+
+    private void SeekDragStarted(object sender, DragStartedEventArgs e)
+    {
+        _draggingSeekSlider = true;
+    }
+
+    private void SeekDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _draggingSeekSlider = false;
+        if (_mediaReady)
+            SeekTo(SeekSlider.Value);
+    }
+
+    private void SeekTo(double seconds)
+    {
+        if (!_mediaReady || _songDurationSeconds <= 0)
+            return;
+
+        _player.Position = TimeSpan.FromSeconds(
+            Math.Clamp(seconds, 0, _songDurationSeconds));
+        UpdateSeekPosition();
+    }
+
+    private static string FormatTime(TimeSpan time) =>
+        time.TotalHours >= 1
+            ? time.ToString(@"h\:mm\:ss")
+            : time.ToString(@"m\:ss");
+
 
     // VOLUME --------------------------------------------------------------
 
@@ -482,6 +581,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _seekTimer.Stop();
         _player.Close();
         base.OnClosed(e);
     }
