@@ -1,9 +1,10 @@
 using System;
-using System.ComponentModel;
-using System.Diagnostics;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
+using System.Diagnostics;
+using System.ComponentModel;
+using System.Collections.Generic;
+using System.Security.Cryptography;
 using System.Windows.Media.Imaging;
 
 namespace MusicPlayer;
@@ -15,6 +16,7 @@ public class SongFile : INotifyPropertyChanged
     public string Name => Path.GetFileName(FullPath);
     public string BpmText { get; private set; } = "—";
     public string LengthText { get; private set; } = "—";
+    public string AudioDetails { get; private set; } = "Unavailable";
 
     private BitmapImage? _artwork;
     public BitmapImage? Artwork
@@ -34,6 +36,10 @@ public class SongFile : INotifyPropertyChanged
     {
         FullPath = fullPath;
 
+        AudioDetails = Path.GetExtension(fullPath)
+            .TrimStart('.')
+            .ToUpperInvariant();
+
         try
         {
             using var file = TagLib.File.Create(fullPath);
@@ -44,6 +50,35 @@ public class SongFile : INotifyPropertyChanged
 
             uint bpm = file.Tag.BeatsPerMinute;
             BpmText = bpm > 0 ? bpm.ToString() : "—";
+
+            int sampleRate = file.Properties.AudioSampleRate;
+            int channels = file.Properties.AudioChannels;
+            int bitrate = file.Properties.AudioBitrate;
+
+            // begin with the audio format
+            List<string> details = new() { AudioDetails };
+
+            // add sample rate when avaliable 
+            if (sampleRate > 0)
+            {
+                details.Add($"{sampleRate / 1000.0:0.#} kHz");
+            }
+
+            // add channel information
+            if (channels == 1)
+                details.Add("Mono");
+            else if (channels == 2)
+                details.Add("Stereo");
+            else if (channels > 2)
+                details.Add($"{channels} channels");
+            
+            if (bitrate > 0)
+            {
+                details.Add($"{bitrate} kbps");
+            }
+
+            AudioDetails = string.Join(" • ", details);
+
         }
         catch (Exception ex)
         {

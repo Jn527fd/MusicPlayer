@@ -206,6 +206,7 @@ public partial class MainWindow : Window
             _isPlaying = false;
             _playWhenOpened = false;
             _currentSong = null;
+            NowPlayingPanel.DataContext = null;
             _currentFolder = folder;
             _songs = files;
 
@@ -422,6 +423,7 @@ public partial class MainWindow : Window
     private void OpenSong(SongFile song, bool playImmediately)
     {
         _currentSong = song;
+        NowPlayingPanel.DataContext = song;
         _playWhenOpened = playImmediately;
         _mediaReady = false;
         _isPlaying = false;
