@@ -3,7 +3,6 @@ using System.IO;
 using System.Text;
 using System.Diagnostics;
 using System.ComponentModel;
-using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Windows.Media.Imaging;
 
@@ -32,19 +31,17 @@ public class SongFile : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public SongFile(string fullPath, AudioAnalysisService analysis) 
+    public SongFile(string fullPath, AudioAnalysisService analysis)
     {
         FullPath = fullPath;
 
-        // Read audio information through the analysis service.
+        // Step 2: data model asks the analysis service to extract metadata.
         AudioMetadata metadata = analysis.ReadMetadata(fullPath);
-
         BpmText = metadata.BpmText;
         LengthText = metadata.LengthText;
         AudioDetails = metadata.AudioDetails;
 
         string imagePath = GetArtworkPath(fullPath);
-        
         if (File.Exists(imagePath))
         {
             try

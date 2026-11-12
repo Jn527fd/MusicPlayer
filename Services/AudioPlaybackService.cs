@@ -3,12 +3,12 @@ using System.Windows.Media;
 
 namespace MusicPlayer;
 
+// Isolates the WPF MediaPlayer from the window's UI and navigation code.
+// The waveform analyzer opens a separate decoder and never changes playback.
 public sealed class AudioPlaybackService
 {
-    // The actual WPF audio player.
     private readonly MediaPlayer _mediaPlayer = new();
 
-    // Forward media events to other classes.
     public event EventHandler MediaOpened
     {
         add => _mediaPlayer.MediaOpened += value;
@@ -27,20 +27,16 @@ public sealed class AudioPlaybackService
         remove => _mediaPlayer.MediaFailed -= value;
     }
 
-    // Current playback position.
     public TimeSpan Position
     {
         get => _mediaPlayer.Position;
         set => _mediaPlayer.Position = value;
     }
 
-    // Song duration, if available.
-    public TimeSpan? Duration =>
-        _mediaPlayer.NaturalDuration.HasTimeSpan
-            ? _mediaPlayer.NaturalDuration.TimeSpan
-            : null;
+    public TimeSpan? Duration => _mediaPlayer.NaturalDuration.HasTimeSpan
+        ? _mediaPlayer.NaturalDuration.TimeSpan
+        : null;
 
-    // Volume ranges from 0.0 to 1.0.
     public double Volume
     {
         get => _mediaPlayer.Volume;
@@ -53,14 +49,9 @@ public sealed class AudioPlaybackService
         set => _mediaPlayer.IsMuted = value;
     }
 
-    // Playback operations.
     public void Open(Uri uri) => _mediaPlayer.Open(uri);
-
     public void Play() => _mediaPlayer.Play();
-
     public void Pause() => _mediaPlayer.Pause();
-
     public void Stop() => _mediaPlayer.Stop();
-
     public void Close() => _mediaPlayer.Close();
 }

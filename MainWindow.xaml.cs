@@ -1,6 +1,9 @@
 using Microsoft.Win32;
 using Microsoft.VisualBasic;
 using System.Net.Http;
+using System.Diagnostics;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Media.Imaging;
 using System;
 using System.Collections.Generic;
@@ -40,6 +43,10 @@ public partial class MainWindow : Window
     private string? _currentFolder;
     private SongFile? _currentSong;
 
+    // Step 4: a new selection cancels the previous waveform decode.
+    private CancellationTokenSource? _waveformCancellation;
+    private float[]? _waveformPeaks;
+
     private bool _windowReady;
     private bool _ignoreSelectionChanged;
     private bool _mediaReady;
@@ -62,6 +69,7 @@ public partial class MainWindow : Window
         UpdatePlayIcon();
         UpdateButtons();
         ResetSeekBar();
+        ClearWaveform();
 
         // Update elapsed time as playback progresses.
         _seekTimer.Tick += SeekTimer_Tick;
@@ -206,6 +214,7 @@ public partial class MainWindow : Window
             _mediaReady = false;
             _isPlaying = false;
             _playWhenOpened = false;
+            ClearWaveform();
             _currentSong = null;
             NowPlayingPanel.DataContext = null;
             _currentFolder = folder;
@@ -423,6 +432,7 @@ public partial class MainWindow : Window
 
     private void OpenSong(SongFile song, bool playImmediately)
     {
+        ClearWaveform();
         _currentSong = song;
         NowPlayingPanel.DataContext = song;
         _playWhenOpened = playImmediately;
@@ -448,6 +458,9 @@ public partial class MainWindow : Window
         UpdatePlayIcon();
         UpdateButtons();
         _player.Open(new Uri(song.FullPath, UriKind.Absolute));
+
+        // Step 4: decode the song asynchronously, without stopping playback.
+        _ = LoadWaveformAsync(song);
     }
 
     private void PlayPause_Click(object sender, RoutedEventArgs e)
@@ -560,12 +573,136 @@ public partial class MainWindow : Window
         RepeatButton.IsEnabled = _songs.Count > 0;
     }
 
+    // WAVEFORM -------------------------------------------------------------
+
+    // Step 4: run slow decoding on a background thread, then return to the
+    // WPF UI thread to update the visualization.
+    private async Task LoadWaveformAsync(SongFile song)
+    {
+        var cancellation = new CancellationTokenSource();
+        _waveformCancellation = cancellation;
+        WaveformStatus.Text = "Generating waveform...";
+
+        try
+        {
+            float[] peaks = await Task.Run(
+                () => _analysis.GenerateWaveform(song.FullPath, cancellation.Token),
+                cancellation.Token);
+
+            // A stale result must never replace a newer song's waveform.
+            if (cancellation.IsCancellationRequested ||
+                !ReferenceEquals(_currentSong, song))
+                return;
+
+            _waveformPeaks = peaks;
+            WaveformStatus.Text = "";
+            DrawWaveform();
+            UpdateWaveformPlayhead();
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when changing tracks.
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Waveform error: {ex}");
+            if (!cancellation.IsCancellationRequested &&
+                ReferenceEquals(_currentSong, song))
+            {
+                WaveformStatus.Text = "Waveform unavailable";
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_waveformCancellation, cancellation))
+                _waveformCancellation = null;
+
+            cancellation.Dispose();
+        }
+    }
+
+    private void ClearWaveform()
+    {
+        _waveformCancellation?.Cancel();
+        _waveformCancellation = null;
+        _waveformPeaks = null;
+        WaveformPath.Data = null;
+        WaveformPlayhead.Visibility = Visibility.Collapsed;
+        WaveformStatus.Text = "Select a song to view its waveform";
+    }
+
+    // Step 5: make one geometry containing a bar for each waveform bin.
+    private void DrawWaveform()
+    {
+        if (_waveformPeaks is null)
+            return;
+
+        double width = WaveformCanvas.ActualWidth;
+        double height = WaveformCanvas.ActualHeight;
+        if (width <= 1 || height <= 1)
+            return;
+
+        double barSpacing = width / _waveformPeaks.Length;
+        double barWidth = Math.Max(0.6, barSpacing * 0.7);
+        double centerY = height / 2.0;
+        double maxHalfHeight = Math.Max(0, centerY - 3);
+
+        StreamGeometry geometry = new();
+        using (StreamGeometryContext context = geometry.Open())
+        {
+            for (int i = 0; i < _waveformPeaks.Length; i++)
+            {
+                double amplitude = Math.Max(1.0,
+                    _waveformPeaks[i] * maxHalfHeight);
+                double x1 = i * barSpacing;
+                double x2 = Math.Min(width, x1 + barWidth);
+                double top = centerY - amplitude;
+                double bottom = centerY + amplitude;
+
+                context.BeginFigure(new Point(x1, top), isFilled: true, isClosed: true);
+                context.LineTo(new Point(x2, top), true, false);
+                context.LineTo(new Point(x2, bottom), true, false);
+                context.LineTo(new Point(x1, bottom), true, false);
+            }
+        }
+
+        geometry.Freeze();
+        WaveformPath.Data = geometry;
+    }
+
+    private void WaveformCanvas_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        DrawWaveform();
+        UpdateWaveformPlayhead();
+    }
+
+    // Step 5: the 50ms seek timer already maintains playback position;
+    // reuse it instead of starting a separate waveform animation timer.
+    private void UpdateWaveformPlayhead()
+    {
+        if (_waveformPeaks is null || !_mediaReady ||
+            _songDurationSeconds <= 0)
+        {
+            WaveformPlayhead.Visibility = Visibility.Collapsed;
+            return;
+        }
+
+        double progress = Math.Clamp(
+            _player.Position.TotalSeconds / _songDurationSeconds, 0.0, 1.0);
+        double x = progress * WaveformCanvas.ActualWidth;
+
+        WaveformPlayhead.X1 = x;
+        WaveformPlayhead.X2 = x;
+        WaveformPlayhead.Y1 = 0;
+        WaveformPlayhead.Y2 = WaveformCanvas.ActualHeight;
+        WaveformPlayhead.Visibility = Visibility.Visible;
+    }
+
     // PLAYBACK TIMELINE ---------------------------------------------------
+
     private void SetSeekDuration()
     {
         TimeSpan? duration = _player.Duration;
-
-        // Duration isn't available yet.
         if (duration is null)
         {
             ResetSeekBar();
@@ -573,12 +710,9 @@ public partial class MainWindow : Window
         }
 
         _songDurationSeconds = duration.Value.TotalSeconds;
-
         SeekSlider.Maximum = Math.Max(1, _songDurationSeconds);
         SeekSlider.IsEnabled = _songDurationSeconds > 0;
-
         DurationText.Text = FormatTime(duration.Value);
-
         UpdateSeekPosition();
     }
 
@@ -610,6 +744,7 @@ public partial class MainWindow : Window
             0, _songDurationSeconds);
         _updatingSeekSlider = false;
         ElapsedTimeText.Text = FormatTime(_player.Position);
+        UpdateWaveformPlayhead();
     }
 
     private void SeekSlider_ValueChanged(
@@ -705,6 +840,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _waveformCancellation?.Cancel();
         _seekTimer.Stop();
         _player.Close();
         base.OnClosed(e);
