@@ -46,6 +46,9 @@ public partial class MainWindow : Window
     // Step 4: a new selection cancels the previous waveform decode.
     private CancellationTokenSource? _waveformCancellation;
     private float[]? _waveformPeaks;
+    private CancellationTokenSource? _frequencyCancellation;
+    private FrequencyAnalysis? _frequencyAnalysis;
+    private int _lastFrequencyFrame = -1;
 
     private bool _windowReady;
     private bool _ignoreSelectionChanged;
@@ -215,6 +218,7 @@ public partial class MainWindow : Window
             _isPlaying = false;
             _playWhenOpened = false;
             ClearWaveform();
+            ClearFrequencyAnalysis();
             _currentSong = null;
             NowPlayingPanel.DataContext = null;
             _currentFolder = folder;
@@ -433,6 +437,7 @@ public partial class MainWindow : Window
     private void OpenSong(SongFile song, bool playImmediately)
     {
         ClearWaveform();
+        ClearFrequencyAnalysis();
         _currentSong = song;
         NowPlayingPanel.DataContext = song;
         _playWhenOpened = playImmediately;
@@ -461,6 +466,7 @@ public partial class MainWindow : Window
 
         // Step 4: decode the song asynchronously, without stopping playback.
         _ = LoadWaveformAsync(song);
+        _ = LoadFrequencyAsync(song);
     }
 
     private void PlayPause_Click(object sender, RoutedEventArgs e)
@@ -621,6 +627,137 @@ public partial class MainWindow : Window
         }
     }
 
+
+    private async Task LoadFrequencyAsync(SongFile song)
+    {
+        var cancellation = new CancellationTokenSource();
+        _frequencyCancellation = cancellation;
+
+        AnalysisStatus.Text = "Analyzing frequency and loudness...";
+
+        try
+        {
+            FrequencyAnalysis result = await Task.Run(
+                () => _analysis.AnalyzeSignal(
+                    song.FullPath,
+                    cancellation.Token),
+                cancellation.Token);
+
+            // Ignore analysis from a previously selected song.
+            if (cancellation.IsCancellationRequested ||
+                !ReferenceEquals(_currentSong, song))
+            {
+                return;
+            }
+
+            _frequencyAnalysis = result;
+            _lastFrequencyFrame = -1;
+
+            AnalysisStatus.Text = result.Frames.Length > 0
+                ? ""
+                : "No audio data available";
+
+            UpdateFrequencyDisplay();
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when changing songs.
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Frequency analysis error: {ex}");
+
+            if (!cancellation.IsCancellationRequested &&
+                ReferenceEquals(_currentSong, song))
+            {
+                AnalysisStatus.Text = "Audio analysis unavailable";
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_frequencyCancellation, cancellation))
+                _frequencyCancellation = null;
+
+            cancellation.Dispose();
+        }
+    }
+
+    private void ClearFrequencyAnalysis()
+    {
+        // Cancel any analysis that is no longer needed.
+        _frequencyCancellation?.Cancel();
+        _frequencyCancellation = null;
+
+        _frequencyAnalysis = null;
+        _lastFrequencyFrame = -1;
+
+        // Reset the visual indicators.
+        BassBar.Value = 0;
+        MidBar.Value = 0;
+        TrebleBar.Value = 0;
+
+        BassText.Text = "0%";
+        MidText.Text = "0%";
+        TrebleText.Text = "0%";
+
+        RmsText.Text = "—";
+        PeakText.Text = "—";
+
+        AnalysisStatus.Text = "Select a song to analyze";
+    }
+
+
+    private void UpdateFrequencyDisplay()
+    {
+        if (_frequencyAnalysis is null ||
+            _frequencyAnalysis.Frames.Length == 0 ||
+            !_mediaReady)
+        {
+            return;
+        }
+
+        // Determine which analysis frame matches playback time.
+        double seconds = _player.Position.TotalSeconds;
+
+        int frameIndex = Math.Clamp(
+            (int)(seconds / _frequencyAnalysis.SecondsPerFrame),
+            0,
+            _frequencyAnalysis.Frames.Length - 1);
+
+        // No need to redraw when we're still in the same frame.
+        if (frameIndex == _lastFrequencyFrame)
+            return;
+
+        _lastFrequencyFrame = frameIndex;
+
+        FrequencyFrame frame =
+            _frequencyAnalysis.Frames[frameIndex];
+
+        // Update the three frequency bands.
+        BassBar.Value = frame.Bass * 100;
+        MidBar.Value = frame.Midrange * 100;
+        TrebleBar.Value = frame.Treble * 100;
+
+        // Update the percentage labels.
+        BassText.Text = $"{frame.Bass * 100:0}%";
+        MidText.Text = $"{frame.Midrange * 100:0}%";
+        TrebleText.Text = $"{frame.Treble * 100:0}%";
+
+        // Update loudness measurements.
+        RmsText.Text = FormatDbfs(frame.RmsDbfs);
+        PeakText.Text = FormatDbfs(frame.PeakDbfs);
+    }
+
+    private static string FormatDbfs(double value)
+    {
+        return double.IsNegativeInfinity(value)
+            ? "−∞ dBFS"
+            : $"{value:0.0} dBFS";
+    }
+
+
+
+
     private void ClearWaveform()
     {
         _waveformCancellation?.Cancel();
@@ -745,6 +882,7 @@ public partial class MainWindow : Window
         _updatingSeekSlider = false;
         ElapsedTimeText.Text = FormatTime(_player.Position);
         UpdateWaveformPlayhead();
+        UpdateFrequencyDisplay();
     }
 
     private void SeekSlider_ValueChanged(
@@ -841,6 +979,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _waveformCancellation?.Cancel();
+        _frequencyCancellation?.Cancel();
         _seekTimer.Stop();
         _player.Close();
         base.OnClosed(e);

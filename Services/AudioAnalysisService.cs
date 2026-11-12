@@ -1,11 +1,12 @@
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
-using System.Security.Cryptography;
+using NAudio.Dsp;
+using NAudio.Wave;
 using System.Text;
 using System.Threading;
-using NAudio.Wave;
+using System.Diagnostics;
+using System.Collections.Generic;
+using System.Security.Cryptography;
 
 namespace MusicPlayer;
 
@@ -14,6 +15,20 @@ public sealed record AudioMetadata(
     string BpmText,
     string LengthText,
     string AudioDetails);
+
+
+public sealed record FrequencyFrame(
+    double Bass,
+    double Midrange,
+    double Treble,
+    double RmsDbfs,
+    double PeakDbfs
+);
+
+public sealed record FrequencyAnalysis(
+    double SecondsPerFrame,
+    FrequencyFrame[] Frames
+);
 
 public sealed class AudioAnalysisService
 {
@@ -60,6 +75,153 @@ public sealed class AudioAnalysisService
             Debug.WriteLine($"Metadata unavailable for {fullPath}: {ex.Message}");
             return new AudioMetadata("—", "—", format);
         }
+    }
+
+    // signal analysis method 
+    public FrequencyAnalysis AnalyzeSignal(string fullPath, CancellationToken cancellationToken)
+    {
+        const int fftSize = 4096;
+        const int fftPower = 12;
+
+        using var reader = new AudioFileReader(fullPath);
+
+        int sampleRate = reader.WaveFormat.SampleRate;
+        int channels = reader.WaveFormat.Channels;
+
+        if (sampleRate <= 0 || channels <= 0)
+            throw new InvalidDataException("Invalid audio format.");
+
+        // interleaved input and reusable fft buffer 
+        float[] samples = new float[fftSize * channels];
+        Complex[] spectrum = new Complex[fftSize];
+
+        List<FrequencyFrame> frames = new();
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            //fill one analysis frame, unless the file ends.
+            int count = 0;
+
+            while (count < samples.Length)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int read = reader.Read(
+                    samples.AsSpan(count, samples.Length - count));
+                
+                if (read == 0)
+                    break;
+                
+                count += read;
+            }
+
+            int availableFrames = count / channels;
+
+            if (availableFrames == 0)
+                break;
+
+            double sumSquares = 0;
+            double peak = 0;
+
+            //convert multichannel audio to mono for the fft
+            for (int i = 0; i < fftSize; i++)
+            {
+                double mono = 0;
+
+                if(i < availableFrames)
+                {
+                    for (int channel = 0; channel < channels; channel++)
+                    {
+                        float value = samples[i * channels + channel];
+
+                        if (!float.IsFinite(value))
+                            value = 0;
+                        
+                        sumSquares += value * (double)value;
+                        peak = Math.Max(peak, Math.Abs(value));
+                        mono += value;
+                    }
+
+                    mono /= channels;
+
+                }
+
+                //han window reduces spectral leakage
+                double window = 0.5 - 0.5 * Math.Cos(
+                    2 * Math.PI * i / (fftSize - 1));
+                
+                spectrum[i].X = (float)(mono * window);
+                spectrum[i].Y = 0f;
+            }
+
+            //loudness measurements in the time domain
+            double rms = Math.Sqrt(sumSquares / count);
+
+            //convert samples into frequency domain data
+            FastFourierTransform.FFT(
+                true, fftPower, spectrum);
+
+            double bassPower = 0;
+            double midPower = 0;
+            double treblePower = 0;
+
+            //analyze the positive freq half of the FFT
+            for (int bin = 1; bin <= fftSize / 2; bin++)
+            {
+                double frequency =
+                    bin * (double)sampleRate / fftSize;
+
+                if (frequency < 20 || frequency >= 16000)
+                    continue;
+                
+                double real = spectrum[bin].X;
+                double imaginary = spectrum[bin].Y;
+
+                double power = real * real + imaginary * imaginary;
+
+                if (frequency < 250)
+                    bassPower += power;
+                else if (frequency < 4000)
+                    midPower += power;
+                else 
+                    treblePower += power;
+            }
+
+            double totalPower =
+            bassPower + midPower + treblePower;
+
+            // Normalize band energies into relative proportions.
+            bool hasEnergy = rms > 0.000001 && totalPower > 0;
+
+            double bass = hasEnergy ? bassPower / totalPower : 0;
+            double mid = hasEnergy ? midPower / totalPower : 0;
+            double treble = hasEnergy ? treblePower / totalPower : 0;
+
+            frames.Add(new FrequencyFrame(
+                bass,
+                mid,
+                treble,
+                ToDbfs(rms),
+                ToDbfs(peak)
+            ));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        return new FrequencyAnalysis(
+            fftSize / (double)sampleRate,
+            frames.ToArray()
+        );
+    }
+
+    // convert linear amplitude into decibels relative
+    private static double ToDbfs(double amplitude)
+    {
+        return amplitude > 0
+            ? 20 * Math.Log10(amplitude)
+            : double.NegativeInfinity;
     }
 
     // Step 2's waveform generator: decode the file once, summarize it into 400 peaks,
