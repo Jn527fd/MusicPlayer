@@ -32,60 +32,19 @@ public class SongFile : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public SongFile(string fullPath)
+    public SongFile(string fullPath, AudioAnalysisService analysis) 
     {
         FullPath = fullPath;
 
-        AudioDetails = Path.GetExtension(fullPath)
-            .TrimStart('.')
-            .ToUpperInvariant();
+        // Read audio information through the analysis service.
+        AudioMetadata metadata = analysis.ReadMetadata(fullPath);
 
-        try
-        {
-            using var file = TagLib.File.Create(fullPath);
-            TimeSpan duration = file.Properties.Duration;
-            LengthText = duration.TotalHours >= 1
-                ? duration.ToString(@"h\:mm\:ss")
-                : $"{(int)duration.TotalMinutes}:{duration.Seconds:00}";
-
-            uint bpm = file.Tag.BeatsPerMinute;
-            BpmText = bpm > 0 ? bpm.ToString() : "—";
-
-            int sampleRate = file.Properties.AudioSampleRate;
-            int channels = file.Properties.AudioChannels;
-            int bitrate = file.Properties.AudioBitrate;
-
-            // begin with the audio format
-            List<string> details = new() { AudioDetails };
-
-            // add sample rate when avaliable 
-            if (sampleRate > 0)
-            {
-                details.Add($"{sampleRate / 1000.0:0.#} kHz");
-            }
-
-            // add channel information
-            if (channels == 1)
-                details.Add("Mono");
-            else if (channels == 2)
-                details.Add("Stereo");
-            else if (channels > 2)
-                details.Add($"{channels} channels");
-            
-            if (bitrate > 0)
-            {
-                details.Add($"{bitrate} kbps");
-            }
-
-            AudioDetails = string.Join(" • ", details);
-
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"Metadata unavailable for {fullPath}: {ex.Message}");
-        }
+        BpmText = metadata.BpmText;
+        LengthText = metadata.LengthText;
+        AudioDetails = metadata.AudioDetails;
 
         string imagePath = GetArtworkPath(fullPath);
+        
         if (File.Exists(imagePath))
         {
             try

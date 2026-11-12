@@ -23,7 +23,8 @@ public partial class MainWindow : Window
     };
     private const int MaxArtworkBytes = 5 * 1024 * 1024;
 
-    private readonly MediaPlayer _player = new();
+    private readonly AudioPlaybackService _player = new();
+    private readonly AudioAnalysisService _analysis = new();
     private readonly Random _random = new();
     private readonly DispatcherTimer _seekTimer = new()
     {
@@ -197,7 +198,7 @@ public partial class MainWindow : Window
                 .Where(path =>
                     string.Equals(Path.GetExtension(path), ".mp3", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(Path.GetExtension(path), ".wav", StringComparison.OrdinalIgnoreCase))
-                .Select(path => new SongFile(path))
+                .Select(path => new SongFile(path, _analysis))
                 .OrderBy(song => song.Name, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -560,19 +561,24 @@ public partial class MainWindow : Window
     }
 
     // PLAYBACK TIMELINE ---------------------------------------------------
-
     private void SetSeekDuration()
     {
-        if (!_player.NaturalDuration.HasTimeSpan)
+        TimeSpan? duration = _player.Duration;
+
+        // Duration isn't available yet.
+        if (duration is null)
         {
             ResetSeekBar();
             return;
         }
 
-        _songDurationSeconds = _player.NaturalDuration.TimeSpan.TotalSeconds;
+        _songDurationSeconds = duration.Value.TotalSeconds;
+
         SeekSlider.Maximum = Math.Max(1, _songDurationSeconds);
         SeekSlider.IsEnabled = _songDurationSeconds > 0;
-        DurationText.Text = FormatTime(_player.NaturalDuration.TimeSpan);
+
+        DurationText.Text = FormatTime(duration.Value);
+
         UpdateSeekPosition();
     }
 
