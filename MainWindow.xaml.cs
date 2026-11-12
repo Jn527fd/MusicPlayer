@@ -1,31 +1,33 @@
 using Microsoft.Win32;
+using Microsoft.VisualBasic;
+using System.Net.Http;
+using System.Windows.Media.Imaging;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Windows;
-using System.Net.Http;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Threading;
 using System.Windows.Input;
 using System.Windows.Media;
-using Microsoft.VisualBasic;
-using System.Windows.Controls;
-using System.Windows.Threading;
-using System.Collections.Generic;
-using System.Windows.Media.Imaging;
-using System.Windows.Controls.Primitives;
 
 namespace MusicPlayer;
 
 public partial class MainWindow : Window
 {
+    private static readonly HttpClient _artworkClient = new()
+    {
+        Timeout = TimeSpan.FromSeconds(15)
+    };
+    private const int MaxArtworkBytes = 5 * 1024 * 1024;
+
     private readonly MediaPlayer _player = new();
     private readonly Random _random = new();
     private readonly DispatcherTimer _seekTimer = new()
     {
         Interval = TimeSpan.FromMilliseconds(50)
-    };
-    private static readonly HttpClient _artworkClient = new()
-    {
-        Timeout = TimeSpan.FromSeconds(15)
     };
 
     private readonly string _settingsDirectory = Path.Combine(
@@ -48,7 +50,6 @@ public partial class MainWindow : Window
     private bool _updatingSeekSlider;
     private bool _draggingSeekSlider;
     private double _songDurationSeconds;
-    private const int MaxArtworkBytes = 5 * 1024 * 1024;
 
     public MainWindow()
     {
@@ -61,9 +62,11 @@ public partial class MainWindow : Window
         UpdateButtons();
         ResetSeekBar();
 
+        // Update elapsed time as playback progresses.
         _seekTimer.Tick += SeekTimer_Tick;
         _seekTimer.Start();
 
+        // Thumb drag events are raised by the slider's internal Thumb.
         SeekSlider.AddHandler(Thumb.DragStartedEvent,
             new DragStartedEventHandler(SeekDragStarted), true);
         SeekSlider.AddHandler(Thumb.DragCompletedEvent,
@@ -176,7 +179,7 @@ public partial class MainWindow : Window
             string folder = File.ReadAllText(DefaultFolderSettingsFile);
             if (Directory.Exists(folder))
                 LoadFolder(folder);
-            else 
+            else
                 ShowError("Saved default folder no longer exists");
         }
         catch (IOException ex) { ShowError(ex.Message); }
@@ -208,7 +211,7 @@ public partial class MainWindow : Window
 
             NowPlayingText.Text = "No song selected";
             ResetSeekBar();
-          
+
             // Clear any old search when switching folders.
             SearchBox.Clear();
             RefreshSongList();
@@ -259,9 +262,9 @@ public partial class MainWindow : Window
             SongList.SelectedItem = _currentSong;
         _ignoreSelectionChanged = false;
 
-        CountText.Text = query.Length == 0
-            ? $"{_songs.Count} songs"
-            : $"{_visibleSongs.Count} of {_songs.Count} songs";
+        // This badge represents the entire opened folder, not search results.
+        CountText.Text =
+            $"{_songs.Count} {(_songs.Count == 1 ? "song" : "songs")} in current folder";
 
         UpdateButtons();
     }
@@ -292,37 +295,29 @@ public partial class MainWindow : Window
         }
     }
 
+    // ALBUM ARTWORK -------------------------------------------------------
+
     private void Artwork_Click(object sender, RoutedEventArgs e)
     {
         if (sender is not Button button || button.Tag is not SongFile song)
             return;
-        
+
+        // Opening this menu should not trigger song playback via a double-click.
+        e.Handled = true;
+
         ContextMenu menu = new();
-
-        MenuItem local = new()
-        {
-            Header = "Choose image from computer..."
-        };
-
+        MenuItem local = new() { Header = "Choose image from computer..." };
         local.Click += (_, _) => ChooseLocalArtwork(song);
 
-        MenuItem url = new()
-        {
-            Header = "Add image from url..."
-        };
-
+        MenuItem url = new() { Header = "Add image from URL..." };
         url.Click += async (_, _) => await ChooseUrlArtworkAsync(song);
 
         menu.Items.Add(local);
         menu.Items.Add(url);
         menu.PlacementTarget = button;
-
-        menu.Placement = 
-            System.Windows.Controls.Primitives.PlacementMode.Bottom;
-
+        menu.Placement = PlacementMode.Bottom;
         menu.IsOpen = true;
     }
-
 
     private void ChooseLocalArtwork(SongFile song)
     {
@@ -338,32 +333,29 @@ public partial class MainWindow : Window
         try
         {
             byte[] bytes = File.ReadAllBytes(dialog.FileName);
-
             if (bytes.Length > MaxArtworkBytes)
-                throw new InvalidDataException(
-                    "Artwork must be smaller than 5 MB.");
+                throw new InvalidDataException("Artwork must be smaller than 5 MB.");
 
             SaveArtwork(song, bytes);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is IOException ||
+                                   ex is UnauthorizedAccessException ||
+                                   ex is NotSupportedException ||
+                                   ex is ArgumentException)
         {
             ShowError($"Could not import artwork: {ex.Message}");
         }
     }
 
-
-    private async Task ChooseUrlArtworkAsync(SongFile song)
+    private async System.Threading.Tasks.Task ChooseUrlArtworkAsync(SongFile song)
     {
         string input = Interaction.InputBox(
-            "Enter a direct HTTPS image URL:",
-            "Album Artwork",
-            "");
-
+            "Enter a direct HTTPS image URL:", "Album Artwork", "");
         if (string.IsNullOrWhiteSpace(input))
             return;
 
-        if (!Uri.TryCreate(input, UriKind.Absolute, out Uri? uri)
-            || uri.Scheme != Uri.UriSchemeHttps)
+        if (!Uri.TryCreate(input, UriKind.Absolute, out Uri? uri) ||
+            uri.Scheme != Uri.UriSchemeHttps)
         {
             ShowError("Please enter a valid HTTPS image URL.");
             return;
@@ -373,87 +365,57 @@ public partial class MainWindow : Window
         {
             using var response = await _artworkClient.GetAsync(
                 uri, HttpCompletionOption.ResponseHeadersRead);
-
             response.EnsureSuccessStatusCode();
 
-            if (response.RequestMessage?.RequestUri?.Scheme
-                != Uri.UriSchemeHttps)
-            {
-                throw new InvalidDataException(
-                    "Only HTTPS image downloads are allowed.");
-            }
+            // Check the final destination when an HTTP redirect occurs.
+            if (response.RequestMessage?.RequestUri?.Scheme != Uri.UriSchemeHttps)
+                throw new InvalidDataException("Only HTTPS image downloads are allowed.");
 
-            if (response.Content.Headers.ContentLength
-                > MaxArtworkBytes)
-            {
-                throw new InvalidDataException(
-                    "Image exceeds the 5 MB limit.");
-            }
+            if (response.Content.Headers.ContentLength > MaxArtworkBytes)
+                throw new InvalidDataException("Image exceeds the 5 MB limit.");
 
-            string? mediaType =
-                response.Content.Headers.ContentType?.MediaType;
+            string? type = response.Content.Headers.ContentType?.MediaType;
+            if (type is not null && !type.StartsWith(
+                "image/", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The URL did not return an image.");
 
-            if (mediaType != null &&
-                !mediaType.StartsWith(
-                    "image/", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidDataException(
-                    "The URL did not return an image.");
-            }
-
-            using var inputStream =
-                await response.Content.ReadAsStreamAsync();
-
+            await using var inputStream = await response.Content.ReadAsStreamAsync();
             using MemoryStream memory = new();
-
             byte[] buffer = new byte[8192];
-            int bytesRead;
+            int count;
 
-            while ((bytesRead =
-                await inputStream.ReadAsync(buffer.AsMemory())) > 0)
+            while ((count = await inputStream.ReadAsync(buffer.AsMemory())) > 0)
             {
-                if (memory.Length + bytesRead > MaxArtworkBytes)
-                    throw new InvalidDataException(
-                        "Image exceeds the 5 MB limit.");
-
-                memory.Write(buffer, 0, bytesRead);
+                if (memory.Length + count > MaxArtworkBytes)
+                    throw new InvalidDataException("Image exceeds the 5 MB limit.");
+                memory.Write(buffer, 0, count);
             }
 
             SaveArtwork(song, memory.ToArray());
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is HttpRequestException ||
+                                   ex is System.Threading.Tasks.TaskCanceledException ||
+                                   ex is IOException ||
+                                   ex is NotSupportedException ||
+                                   ex is ArgumentException)
         {
             ShowError($"Could not download artwork: {ex.Message}");
         }
     }
 
-
-    private void SaveArtwork(SongFile song, byte[] bytes)
+    private static void SaveArtwork(SongFile song, byte[] bytes)
     {
-        // Decode the supplied image
         BitmapImage bitmap = SongFile.DecodeArtwork(bytes);
-
-        // Find this song's persistent artwork path
         string path = SongFile.GetArtworkPath(song.FullPath);
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
 
-        Directory.CreateDirectory(
-            Path.GetDirectoryName(path)!);
-
-        // Save a resized PNG copy
         PngBitmapEncoder encoder = new();
-
         encoder.Frames.Add(BitmapFrame.Create(bitmap));
-
         using (FileStream output = File.Create(path))
-        {
             encoder.Save(output);
-        }
 
-        // Update the artwork shown in the playlist
-        song.Artwork = bitmap;
+        song.Artwork = bitmap; // INotifyPropertyChanged refreshes the image.
     }
-
-
 
     // AUDIO PLAYBACK ------------------------------------------------------
 
@@ -595,7 +557,7 @@ public partial class MainWindow : Window
         RepeatButton.IsEnabled = _songs.Count > 0;
     }
 
-    // PLAYBACK TIMELINE -----------------------------------------------------
+    // PLAYBACK TIMELINE ---------------------------------------------------
 
     private void SetSeekDuration()
     {
@@ -635,27 +597,11 @@ public partial class MainWindow : Window
         if (!_mediaReady || _songDurationSeconds <= 0)
             return;
 
-        double position = Math.Clamp(
-            _player.Position.TotalSeconds,
-            0,
-            _songDurationSeconds);
-
-        if (Math.Abs(SeekSlider.Value - position) > 0.01)
-        {
-            _updatingSeekSlider = true;
-
-            try
-            {
-                SeekSlider.Value = position;
-            }
-            finally
-            {
-                _updatingSeekSlider = false;
-            }
-        }
-
-        ElapsedTimeText.Text =
-            FormatTime(TimeSpan.FromSeconds(position));
+        _updatingSeekSlider = true;
+        SeekSlider.Value = Math.Clamp(_player.Position.TotalSeconds,
+            0, _songDurationSeconds);
+        _updatingSeekSlider = false;
+        ElapsedTimeText.Text = FormatTime(_player.Position);
     }
 
     private void SeekSlider_ValueChanged(
@@ -696,7 +642,6 @@ public partial class MainWindow : Window
         time.TotalHours >= 1
             ? time.ToString(@"h\:mm\:ss")
             : time.ToString(@"m\:ss");
-
 
     // VOLUME --------------------------------------------------------------
 
