@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using NAudio.Dsp;
+using System.Linq;
 using NAudio.Wave;
 using System.Text;
 using System.Threading;
@@ -23,6 +24,11 @@ public sealed record FrequencyFrame(
     double Treble,
     double RmsDbfs,
     double PeakDbfs
+);
+
+public sealed record TempoEstimate(
+    double Bpm,
+    double RhythmStrength
 );
 
 public sealed record FrequencyAnalysis(
@@ -215,6 +221,148 @@ public sealed class AudioAnalysisService
             frames.ToArray()
         );
     }
+
+
+    public TempoEstimate? EstimateTempo(string fullPath, CancellationToken cancellationToken)
+    {
+        const int fftSize = 2048;
+        const int hopSize = 1024;
+        const int fftPower = 11; // 2^11 = 2048
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // First try the cached result.
+        string cachePath = GetTempoCachePath(fullPath);
+
+        if (TryReadTempoCache(cachePath, out TempoEstimate? cached))
+            return cached;
+
+        using var reader = new AudioFileReader(fullPath);
+
+        int sampleRate = reader.WaveFormat.SampleRate;
+        int channels = reader.WaveFormat.Channels;
+
+        if (sampleRate <= 0 || channels <= 0)
+            return null;
+
+        // Keep a sliding window of mono samples.
+        float[] windowSamples = new float[fftSize];
+        float[] buffer = new float[hopSize * channels];
+
+        Complex[] fft = new Complex[fftSize];
+        double[] previousMagnitudes = new double[fftSize / 2];
+
+        List<double> onsetStrength = new();
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Shift the older samples to the front.
+            Array.Copy(
+                windowSamples,
+                hopSize,
+                windowSamples,
+                0,
+                fftSize - hopSize);
+
+            int count = 0;
+
+            // Read one hop of interleaved samples.
+            while (count < buffer.Length)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                int read = reader.Read(
+                    buffer.AsSpan(count, buffer.Length - count));
+
+                if (read == 0)
+                    break;
+
+                count += read;
+            }
+
+            int framesRead = count / channels;
+
+            if (framesRead == 0)
+                break;
+
+            // Convert interleaved channels into mono.
+            for (int i = 0; i < hopSize; i++)
+            {
+                double mono = 0;
+
+                if (i < framesRead)
+                {
+                    for (int c = 0; c < channels; c++)
+                        mono += buffer[i * channels + c];
+
+                    mono /= channels;
+                }
+
+                windowSamples[fftSize - hopSize + i] =
+                    (float)mono;
+            }
+
+            // Apply a Hann window before FFT.
+            for (int i = 0; i < fftSize; i++)
+            {
+                double hann = 0.5 - 0.5 * Math.Cos(
+                    2 * Math.PI * i / (fftSize - 1));
+
+                fft[i].X = (float)(windowSamples[i] * hann);
+                fft[i].Y = 0;
+            }
+
+            FastFourierTransform.FFT(true, fftPower, fft);
+
+            // Spectral flux: measure increases in spectral magnitude.
+            double flux = 0;
+
+            for (int bin = 1; bin < fftSize / 2; bin++)
+            {
+                double frequency =
+                    bin * (double)sampleRate / fftSize;
+
+                if (frequency < 40 || frequency > 8000)
+                    continue;
+
+                double real = fft[bin].X;
+                double imaginary = fft[bin].Y;
+
+                double magnitude = Math.Sqrt(
+                    real * real + imaginary * imaginary);
+
+                // Log compression reduces domination by loud bins.
+                double compressed = Math.Log(1 + magnitude);
+
+                double increase =
+                    compressed - previousMagnitudes[bin];
+
+                if (increase > 0)
+                    flux += increase;
+
+                previousMagnitudes[bin] = compressed;
+            }
+
+            onsetStrength.Add(flux);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        double secondsPerHop = hopSize / (double)sampleRate;
+
+        TempoEstimate? estimate = FindTempo(
+            onsetStrength,
+            secondsPerHop,
+            cancellationToken);
+
+        if (estimate is not null)
+            WriteTempoCache(cachePath, estimate);
+
+        return estimate;
+    }
+
 
     // convert linear amplitude into decibels relative
     private static double ToDbfs(double amplitude)
