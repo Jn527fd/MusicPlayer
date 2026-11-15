@@ -364,6 +364,169 @@ public sealed class AudioAnalysisService
     }
 
 
+    private static TempoEstimate? FindTempo(List<double> onsetStrength, double secondsPerHop, CancellationToken cancellationToken)
+    {
+        const double minBpm = 60;
+        const double maxBpm = 200;
+
+        int count = onsetStrength.Count;
+
+        // Require at least several seconds of rhythm data.
+        if (count * secondsPerHop < 8)
+            return null;
+
+        // Remove the average onset strength.
+        double mean = onsetStrength.Average();
+
+        double[] signal = onsetStrength
+            .Select(value => value - mean)
+            .ToArray();
+
+        int minLag = Math.Max(
+            1,
+            (int)Math.Floor(60 / (maxBpm * secondsPerHop)));
+
+        int maxLag = Math.Min(
+            count / 2,
+            (int)Math.Ceiling(60 / (minBpm * secondsPerHop)));
+
+        double bestScore = double.NegativeInfinity;
+        int bestLag = -1;
+
+        // Autocorrelation: compare the signal with delayed copies.
+        for (int lag = minLag; lag <= maxLag; lag++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            double numerator = 0;
+            double leftPower = 0;
+            double rightPower = 0;
+
+            for (int i = lag; i < count; i++)
+            {
+                double a = signal[i];
+                double b = signal[i - lag];
+
+                numerator += a * b;
+                leftPower += a * a;
+                rightPower += b * b;
+            }
+
+            if (leftPower <= 0 || rightPower <= 0)
+                continue;
+
+            // Normalized autocorrelation.
+            double score = numerator /
+                Math.Sqrt(leftPower * rightPower);
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestLag = lag;
+            }
+        }
+
+        // Reject silence, weak repetition, or invalid estimates.
+        if (bestLag < 0 || bestScore < 0.12)
+            return null;
+
+        double bpm = 60 / (bestLag * secondsPerHop);
+
+        if (bpm < minBpm || bpm > maxBpm)
+            return null;
+
+        return new TempoEstimate(
+            Math.Round(bpm),
+            Math.Clamp(bestScore, 0, 1)
+        );
+    }
+
+
+    private static string GetTempoCachePath(string fullPath)
+    {
+        FileInfo file = new(fullPath);
+
+        string identity =
+            $"{Path.GetFullPath(fullPath).ToUpperInvariant()}|" +
+            $"{file.Length}|" +
+            $"{file.LastWriteTimeUtc.Ticks}|tempo-v1";
+
+        byte[] hash = SHA256.HashData(
+            Encoding.UTF8.GetBytes(identity));
+
+        string folder = Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "MusicPlayer",
+            "Tempo");
+
+        return Path.Combine(
+            folder,
+            Convert.ToHexString(hash) + ".bin");
+    }
+
+
+    private static bool TryReadTempoCache(string path, out TempoEstimate? estimate)
+    {
+        estimate = null;
+
+        if (!File.Exists(path))
+            return false;
+
+        try
+        {
+            using var reader = new BinaryReader(File.OpenRead(path));
+
+            if (reader.BaseStream.Length != sizeof(double) * 2)
+                return false;
+
+            double bpm = reader.ReadDouble();
+            double strength = reader.ReadDouble();
+
+            if (!double.IsFinite(bpm) ||
+                !double.IsFinite(strength) ||
+                bpm < 60 || bpm > 200 ||
+                strength < 0 || strength > 1)
+            {
+                return false;
+            }
+
+            estimate = new TempoEstimate(bpm, strength);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+
+    private static void WriteTempoCache(string path, TempoEstimate estimate)
+    {
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+            using var writer = new BinaryWriter(File.Create(path));
+
+            writer.Write(estimate.Bpm);
+            writer.Write(estimate.RhythmStrength);
+        }
+        catch (IOException)
+        {
+            // Caching is optional. The estimate is still usable.
+        }
+        catch (UnauthorizedAccessException)
+        {
+            // Same: don't fail the analysis because of the cache.
+        }
+    }
+
+
     // convert linear amplitude into decibels relative
     private static double ToDbfs(double amplitude)
     {

@@ -16,6 +16,7 @@ public class SongFile : INotifyPropertyChanged
     public string BpmText { get; private set; } = "—";
     public string LengthText { get; private set; } = "—";
     public string AudioDetails { get; private set; } = "Unavailable";
+    public string TempoInfoText { get; private set; } = "";
 
     private BitmapImage? _artwork;
     public BitmapImage? Artwork
@@ -40,6 +41,9 @@ public class SongFile : INotifyPropertyChanged
         BpmText = metadata.BpmText;
         LengthText = metadata.LengthText;
         AudioDetails = metadata.AudioDetails;
+        TempoInfoText = BpmText == "—"
+            ? "BPM not analyzed"
+            : "BPM from file metadata";
 
         string imagePath = GetArtworkPath(fullPath);
         if (File.Exists(imagePath))
@@ -78,4 +82,35 @@ public class SongFile : INotifyPropertyChanged
         image.Freeze();
         return image;
     }
+
+    public void ApplyTempoEstimate(TempoEstimate? estimate)
+    {
+        // Never overwrite an existing BPM metadata value.
+        if (TempoInfoText == "BPM from file metadata")
+            return;
+
+        if (estimate is null)
+        {
+            TempoInfoText = "Unable to estimate BPM";
+        }
+        else
+        {
+            BpmText = $"{estimate.Bpm:0}";
+
+            TempoInfoText =
+                $"Estimated BPM · Rhythm strength: " +
+                $"{estimate.RhythmStrength:P0}";
+
+            // Tell WPF the BPM value has changed.
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(BpmText)));
+        }
+
+        // Tell WPF the source information has changed.
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(nameof(TempoInfoText)));
+    }
+
 }

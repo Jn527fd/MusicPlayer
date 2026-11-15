@@ -251,6 +251,12 @@
                                            Foreground="White"/>
                             </StackPanel>
 
+                            <TextBlock Text="{Binding TempoInfoText}"
+                                       Foreground="#8FC8F5"
+                                       FontSize="11"
+                                       Margin="0,4,0,0"
+                                       TextTrimming="CharacterEllipsis"/>
+
                             <!-- technical audio info -->
                             <TextBlock Text="{Binding AudioDetails}"
                                        Foreground="#93A4BB"

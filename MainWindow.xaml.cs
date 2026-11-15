@@ -47,6 +47,7 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _waveformCancellation;
     private float[]? _waveformPeaks;
     private CancellationTokenSource? _frequencyCancellation;
+    private CancellationTokenSource? _tempoCancellation;
     private FrequencyAnalysis? _frequencyAnalysis;
     private int _lastFrequencyFrame = -1;
 
@@ -219,6 +220,7 @@ public partial class MainWindow : Window
             _playWhenOpened = false;
             ClearWaveform();
             ClearFrequencyAnalysis();
+            CancelTempoAnalysis();
             _currentSong = null;
             NowPlayingPanel.DataContext = null;
             _currentFolder = folder;
@@ -438,6 +440,7 @@ public partial class MainWindow : Window
     {
         ClearWaveform();
         ClearFrequencyAnalysis();
+        CancelTempoAnalysis();
         _currentSong = song;
         NowPlayingPanel.DataContext = song;
         _playWhenOpened = playImmediately;
@@ -467,6 +470,7 @@ public partial class MainWindow : Window
         // Step 4: decode the song asynchronously, without stopping playback.
         _ = LoadWaveformAsync(song);
         _ = LoadFrequencyAsync(song);
+        _ = LoadTempoAsync(song);
     }
 
     private void PlayPause_Click(object sender, RoutedEventArgs e)
@@ -680,6 +684,63 @@ public partial class MainWindow : Window
 
             cancellation.Dispose();
         }
+    }
+
+
+    private async Task LoadTempoAsync(SongFile song)
+    {
+        // Keep the BPM value already stored in the audio file.
+        if (song.TempoInfoText == "BPM from file metadata")
+            return;
+
+        var cancellation = new CancellationTokenSource();
+        _tempoCancellation = cancellation;
+
+        try
+        {
+            TempoEstimate? estimate = await Task.Run(
+                () => _analysis.EstimateTempo(
+                    song.FullPath,
+                    cancellation.Token),
+                cancellation.Token);
+
+            // Only update the currently selected song.
+            if (cancellation.IsCancellationRequested ||
+                !ReferenceEquals(_currentSong, song))
+            {
+                return;
+            }
+
+            // Updates the UI through INotifyPropertyChanged.
+            song.ApplyTempoEstimate(estimate);
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal when the user changes songs.
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Tempo estimation failed: {ex}");
+
+            if (!cancellation.IsCancellationRequested &&
+                ReferenceEquals(_currentSong, song))
+            {
+                song.ApplyTempoEstimate(null);
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_tempoCancellation, cancellation))
+                _tempoCancellation = null;
+
+            cancellation.Dispose();
+        }
+    }
+
+    private void CancelTempoAnalysis()
+    {
+        _tempoCancellation?.Cancel();
+        _tempoCancellation = null;
     }
 
     private void ClearFrequencyAnalysis()
@@ -980,6 +1041,7 @@ public partial class MainWindow : Window
     {
         _waveformCancellation?.Cancel();
         _frequencyCancellation?.Cancel();
+        _tempoCancellation?.Cancel();
         _seekTimer.Stop();
         _player.Close();
         base.OnClosed(e);
