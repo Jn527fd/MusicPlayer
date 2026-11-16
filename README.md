@@ -1,6 +1,6 @@
 # MusicPlayer
 
-MusicPlayer is a Windows desktop app for playing local MP3 and WAV files and inspecting their audio. It combines a searchable folder view with a waveform and signal measurements that follow the playback position.
+MusicPlayer is a Windows desktop app built with C# and WPF for playing local MP3 and WAV files. It combines a searchable music library with playback-synced audio analysis, automatic BPM estimation, and a 10-band graphic equalizer.
 
 ## Getting started
 
@@ -17,25 +17,34 @@ From the **File** menu, choose **Open Folder** to list its MP3 and WAV files. Th
 ## Features
 
 - Play and pause, skip to the previous or next track, shuffle, repeat the current track, seek, adjust volume, and mute.
-- View duration, format, sample rate, channel count, and bitrate when available. The BPM field currently displays the embedded tempo tag or `-` when the tag is unavailable.
+- View duration, format, sample rate, channel count, and bitrate when available. The song list and Now Playing panel show embedded BPM when available and estimate it from the audio when a track without a BPM tag is opened.
 - See a full-track waveform with a moving playhead. The app generates 400 peak values in the background and caches them for future opens.
-- Inspect relative bass, midrange, and treble energy and see RMS and peak levels in dBFS at the current playback position. Levels below digital full scale appear as negative values.
-- Attach custom artwork from a local image or URL. The default folder setting, custom artwork, and waveform cache are stored under `%LOCALAPPDATA%\MusicPlayer`.
+- Inspect relative bass, midrange, and treble energy and see RMS and peak levels in dBFS at the current playback position. These measurements describe the source audio. Levels below digital full scale appear as negative values.
+- Attach custom artwork from a local image or URL. The default folder setting, custom artwork, waveform cache, and tempo cache are stored under `%LOCALAPPDATA%\MusicPlayer`.
+
+## Automatic BPM estimation
+
+When you open a track without an embedded BPM tag, MusicPlayer analyzes it in the background. It uses spectral flux to detect onsets and normalized autocorrelation to find repeating beat intervals between 60 and 200 BPM. Now Playing displays the estimated BPM and a rhythm strength score. If the signal is too short or the rhythm is too weak to estimate, the BPM field shows `-`.
+
+Switching tracks cancels the previous analysis. Successful estimates are cached using the file path, size, modification time, and detector version.
+
+## Graphic equalizer
+
+Open **Sound > Equalizer** to adjust 10 frequency bands from 31.25 Hz to 16 kHz. Each slider cuts or boosts its band by up to 12 dB during playback. The equalizer starts at **Flat**, with every band at 0 dB. Choose **Bass Boost**, **Vocal**, or **V-Shape** from the preset menu, or move a slider to create a **Custom** setting. **Reset** restores **Flat**.
+
+The equalizer is always enabled. Settings carry over when you switch tracks during the current session.
 
 ## Project structure
 
 | File | Role |
 | --- | --- |
 | [`MainWindow.xaml`](MainWindow.xaml) and [`MainWindow.xaml.cs`](MainWindow.xaml.cs) | WPF layout, library browsing, playback controls, and visualization updates. |
-| [`SongFile.cs`](SongFile.cs) | Per-track metadata and artwork used by the song list and Now Playing panel. |
-| [`Services/AudioPlaybackService.cs`](Services/AudioPlaybackService.cs) | Playback through WPF `MediaPlayer`. |
-| [`Services/AudioAnalysisService.cs`](Services/AudioAnalysisService.cs) | Metadata reading with TagLibSharp, plus waveform and FFT-based signal analysis with NAudio. |
+| [`SongFile.cs`](SongFile.cs) | Per-track metadata, tempo estimates, and artwork used by the song list and Now Playing panel. |
+| [`EqualizerWindow.xaml`](EqualizerWindow.xaml) and [`EqualizerWindow.xaml.cs`](EqualizerWindow.xaml.cs) | Equalizer layout, band sliders, and preset controls. |
+| [`Services/AudioPlaybackService.cs`](Services/AudioPlaybackService.cs) | NAudio decoding and `WaveOut` playback, with the equalizer in the playback pipeline. |
+| [`Services/EqualizerSampleProvider.cs`](Services/EqualizerSampleProvider.cs) | Per-channel biquad filters and output attenuation to provide headroom when bands are boosted. |
+| [`Services/AudioAnalysisService.cs`](Services/AudioAnalysisService.cs) | TagLibSharp metadata reading and NAudio waveform, frequency, level, and tempo analysis. |
 
-## Next step: automatic BPM detection
+## Planned work
 
-Estimate a song's tempo directly from its audio, including tracks with missing BPM tags. A first implementation can analyze each track when it is opened and cache the result for later visits.
-
-1. Add a cancellable tempo analysis method to `AudioAnalysisService`. Decode audio in the background, calculate a beat-onset envelope using spectral flux, and use autocorrelation to find likely beat intervals within a configurable tempo range.
-2. Keep embedded BPM and detected BPM as separate values. Display the estimate in the song list and Now Playing panel once available, label it as detected, and fall back to the embedded tag if the estimate is inconclusive. Leave the field blank with `-` if neither value is available.
-3. Cache the estimate by file path, file size, modification time, and detector version so changed tracks and algorithm updates trigger fresh analysis.
-4. Check accuracy with known-tempo click tracks and music with verified BPM. Include half-time and double-time ambiguity, silence, and tracks with weak or changing rhythms. Verify that changing songs during analysis keeps playback responsive and prevents stale results from updating the wrong track.
+- Save and manage custom equalizer presets.
