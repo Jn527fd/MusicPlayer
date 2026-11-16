@@ -1,5 +1,5 @@
-
 using System;
+using System.Linq;
 using NAudio.Dsp;
 using NAudio.Wave;
 
@@ -7,14 +7,23 @@ namespace MusicPlayer;
 
 public sealed class EqualizerSampleProvider : ISampleProvider
 {
+    // Standard 10-band graphic equalizer frequencies.
+    public static readonly float[] Frequencies =
+    {
+        31.25f, 62.5f, 125f, 250f, 500f,
+        1000f, 2000f, 4000f, 8000f, 16000f
+    };
+
+    public const int BandCount = 10;
+
     private readonly ISampleProvider _source;
     private readonly BiQuadFilter[][] _filters;
+    private readonly float[] _gains = new float[BandCount];
+    private readonly bool[] _activeBands = new bool[BandCount];
     private readonly object _sync = new();
 
-    private readonly float[] _frequencies = { 100f, 1000f, 10000f };
-    private readonly float[] _gains = { 0f, 0f, 0f };
-
     private bool _enabled = true;
+    private float _outputGain = 1f;
 
     public WaveFormat WaveFormat => _source.WaveFormat;
 
@@ -22,54 +31,58 @@ public sealed class EqualizerSampleProvider : ISampleProvider
     {
         _source = source;
 
-        int channels = source.WaveFormat.Channels;
-        int sampleRate = source.WaveFormat.SampleRate;
+        int sampleRate = WaveFormat.SampleRate;
+        int channels = WaveFormat.Channels;
 
-        _filters = new BiQuadFilter[3][];
+        _filters = new BiQuadFilter[BandCount][];
 
-        for (int band = 0; band < 3; band++)
+        for (int band = 0; band < BandCount; band++)
         {
             _filters[band] = new BiQuadFilter[channels];
 
+            // A band must remain below the Nyquist frequency.
+            _activeBands[band] =
+                Frequencies[band] < sampleRate * 0.45f;
+
+            float frequency = Math.Min(
+                Frequencies[band],
+                sampleRate * 0.45f);
+
             for (int channel = 0; channel < channels; channel++)
             {
-                float frequency = Math.Min(
-                    _frequencies[band],
-                    sampleRate * 0.45f);
-
-                _filters[band][channel] =
-                    BiQuadFilter.PeakingEQ(
-                        sampleRate,
-                        frequency,
-                        0.8f,
-                        0f);
+                _filters[band][channel] = BiQuadFilter.PeakingEQ(
+                    sampleRate,
+                    frequency,
+                    1.4f,
+                    0f);
             }
         }
     }
 
-    public void SetGains(float bass, float mid, float treble)
+    public void SetBandGain(int band, float gainDb)
     {
+        if (band < 0 || band >= BandCount)
+            throw new ArgumentOutOfRangeException(nameof(band));
+
         lock (_sync)
         {
-            _gains[0] = Math.Clamp(bass, -9f, 9f);
-            _gains[1] = Math.Clamp(mid, -9f, 9f);
-            _gains[2] = Math.Clamp(treble, -9f, 9f);
+            _gains[band] = Math.Clamp(gainDb, -12f, 12f);
 
-            for (int band = 0; band < 3; band++)
+            if (_activeBands[band])
             {
-                float frequency = Math.Min(
-                    _frequencies[band],
-                    WaveFormat.SampleRate * 0.45f);
-
-                foreach (BiQuadFilter filter in _filters[band])
+                for (int channel = 0;
+                     channel < WaveFormat.Channels;
+                     channel++)
                 {
-                    filter.SetPeakingEq(
+                    _filters[band][channel].SetPeakingEq(
                         WaveFormat.SampleRate,
-                        frequency,
-                        0.8f,
+                        Frequencies[band],
+                        1.4f,
                         _gains[band]);
                 }
             }
+
+            UpdateHeadroom();
         }
     }
 
@@ -77,6 +90,18 @@ public sealed class EqualizerSampleProvider : ISampleProvider
     {
         lock (_sync)
             _enabled = enabled;
+    }
+
+    private void UpdateHeadroom()
+    {
+        // Attenuate when bands are boosted to provide headroom.
+        float maximumBoost = _gains.Max();
+
+        float attenuationDb = -Math.Max(0f, maximumBoost);
+
+        _outputGain = (float)Math.Pow(
+            10.0,
+            attenuationDb / 20.0);
     }
 
     public int Read(Span<float> buffer)
@@ -95,13 +120,16 @@ public sealed class EqualizerSampleProvider : ISampleProvider
                 int channel = i % channels;
                 float sample = buffer[i];
 
-                for (int band = 0; band < 3; band++)
+                for (int band = 0; band < BandCount; band++)
                 {
+                    if (!_activeBands[band])
+                        continue;
+
                     sample = _filters[band][channel]
                         .Transform(sample);
                 }
 
-                buffer[i] = sample;
+                buffer[i] = sample * _outputGain;
             }
 
             return samplesRead;

@@ -1,90 +1,74 @@
 <Window x:Class="MusicPlayer.EqualizerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Audio Equalizer"
-        Width="440"
-        Height="380"
-        MinWidth="400"
-        MinHeight="350"
+        Title="10-Band Graphic Equalizer"
+        Width="580"
+        Height="670"
+        MinWidth="500"
+        MinHeight="500"
         WindowStartupLocation="CenterOwner"
         Background="#171C26"
         Foreground="White">
 
-    <StackPanel Margin="24">
+    <Grid Margin="22">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
 
-        <TextBlock Text="Audio Equalizer"
-                   FontSize="20"
+        <TextBlock Grid.Row="0"
+                   Text="Graphic Equalizer"
+                   FontSize="22"
                    FontWeight="SemiBold"
                    Margin="0,0,0,16"/>
 
-        <CheckBox x:Name="EnableEqCheck"
+        <CheckBox Grid.Row="1"
+                  x:Name="EnableEqCheck"
                   Content="Enable Equalizer"
                   Foreground="White"
-                  IsChecked="True"
                   Checked="EqEnabledChanged"
                   Unchecked="EqEnabledChanged"
-                  Margin="0,0,0,20"/>
+                  Margin="0,0,0,16"/>
 
-        <!-- Bass -->
-        <TextBlock Text="Bass — 100 Hz"
-                   Foreground="#AABBD0"/>
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    Margin="0,0,0,16">
 
-        <Slider x:Name="BassSlider"
-                Minimum="-9"
-                Maximum="9"
-                Value="0"
-                TickFrequency="1"
-                IsSnapToTickEnabled="True"
-                ValueChanged="EqSliderChanged"
-                Margin="0,8,0,3"/>
+            <TextBlock Text="Preset:"
+                       Foreground="#AABBD0"
+                       VerticalAlignment="Center"
+                       Margin="0,0,12,0"/>
 
-        <TextBlock x:Name="BassValue"
-                   Foreground="White"
-                   HorizontalAlignment="Right"
-                   Margin="0,0,0,14"/>
+            <ComboBox x:Name="PresetBox"
+                      Width="200"
+                      SelectionChanged="PresetChanged">
+                <ComboBoxItem Content="Custom"/>
+                <ComboBoxItem Content="Flat"/>
+                <ComboBoxItem Content="Bass Boost"/>
+                <ComboBoxItem Content="Vocal"/>
+                <ComboBoxItem Content="V-Shape"/>
+            </ComboBox>
+        </StackPanel>
 
-        <!-- Midrange -->
-        <TextBlock Text="Midrange — 1 kHz"
-                   Foreground="#AABBD0"/>
+        <!-- Ten sliders are added here from C# -->
+        <ScrollViewer Grid.Row="3"
+                      VerticalScrollBarVisibility="Auto">
 
-        <Slider x:Name="MidSlider"
-                Minimum="-9"
-                Maximum="9"
-                Value="0"
-                TickFrequency="1"
-                IsSnapToTickEnabled="True"
-                ValueChanged="EqSliderChanged"
-                Margin="0,8,0,3"/>
+            <StackPanel x:Name="BandsPanel"/>
 
-        <TextBlock x:Name="MidValue"
-                   Foreground="White"
-                   HorizontalAlignment="Right"
-                   Margin="0,0,0,14"/>
+        </ScrollViewer>
 
-        <!-- Treble -->
-        <TextBlock Text="Treble — 10 kHz"
-                   Foreground="#AABBD0"/>
-
-        <Slider x:Name="TrebleSlider"
-                Minimum="-9"
-                Maximum="9"
-                Value="0"
-                TickFrequency="1"
-                IsSnapToTickEnabled="True"
-                ValueChanged="EqSliderChanged"
-                Margin="0,8,0,3"/>
-
-        <TextBlock x:Name="TrebleValue"
-                   Foreground="White"
-                   HorizontalAlignment="Right"
-                   Margin="0,0,0,16"/>
-
-        <Button Content="Reset to Flat"
+        <Button Grid.Row="4"
+                Content="Reset to Flat"
                 Click="ResetEq_Click"
                 Background="#34435B"
                 Foreground="White"
-                Padding="12,8"
-                HorizontalAlignment="Right"/>
+                Padding="14,9"
+                HorizontalAlignment="Right"
+                Margin="0,16,0,0"/>
 
-    </StackPanel>
+    </Grid>
 </Window>

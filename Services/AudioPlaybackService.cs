@@ -26,9 +26,8 @@ public sealed class AudioPlaybackService
     private bool _isMuted;
     private bool _eqEnabled = true;
 
-    private float _bass;
-    private float _mid;
-    private float _treble;
+    private readonly float[] _eqGains =
+        new float[EqualizerSampleProvider.BandCount];
 
     public event EventHandler? MediaOpened;
     public event EventHandler? MediaEnded;
@@ -66,31 +65,41 @@ public sealed class AudioPlaybackService
         }
     }
 
-    public float BassGain => _bass;
-    public float MidGain => _mid;
-    public float TrebleGain => _treble;
-    public bool EqualizerEnabled => _eqEnabled;
-
     private void ApplyVolume()
     {
         if (_reader != null)
             _reader.Volume = _isMuted ? 0f : (float)_volume;
     }
 
-    public void SetEqualizer(
-        float bass, float mid, float treble)
-    {
-        _bass = Math.Clamp(bass, -9f, 9f);
-        _mid = Math.Clamp(mid, -9f, 9f);
-        _treble = Math.Clamp(treble, -9f, 9f);
+   
+    public bool EqualizerEnabled => _eqEnabled;
 
-        _equalizer?.SetGains(_bass, _mid, _treble);
+    public float GetBandGain(int band)
+    {
+        return _eqGains[band];
+    }
+
+    public void SetBandGain(int band, float gainDb)
+    {
+        if (band < 0 || band >= _eqGains.Length)
+            throw new ArgumentOutOfRangeException(nameof(band));
+
+        float gain = Math.Clamp(gainDb, -12f, 12f);
+
+        _eqGains[band] = gain;
+        _equalizer?.SetBandGain(band, gain);
     }
 
     public void SetEqualizerEnabled(bool enabled)
     {
         _eqEnabled = enabled;
         _equalizer?.SetEnabled(enabled);
+    }
+
+    public void ResetEqualizer()
+    {
+        for (int i = 0; i < _eqGains.Length; i++)
+            SetBandGain(i, 0f);
     }
 
     public void Open(Uri uri)
@@ -102,9 +111,10 @@ public sealed class AudioPlaybackService
             AudioFileReader reader = new(uri.LocalPath);
             EqualizerSampleProvider equalizer = new(reader);
 
-            equalizer.SetGains(_bass, _mid, _treble);
-            equalizer.SetEnabled(_eqEnabled);
+            for (int i = 0; i < _eqGains.Length; i++)
+                equalizer.SetBandGain(i, _eqGains[i]);
 
+            equalizer.SetEnabled(_eqEnabled);
             WaveOut output = new();
 
             try
