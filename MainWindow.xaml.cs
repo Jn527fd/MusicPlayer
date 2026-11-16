@@ -1014,13 +1014,14 @@ public partial class MainWindow : Window
     }
 
     // MENUS AND CLEANUP ---------------------------------------------------
-
     private void Equalizer_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(this,
-            "The equalizer and saved EQ presets will be added in a later version.",
-            "MusicPlayer Equalizer", MessageBoxButton.OK,
-            MessageBoxImage.Information);
+        EqualizerWindow window = new(_player)
+        {
+            Owner = this
+        };
+
+        window.Show();
     }
 
     private void About_Click(object sender, RoutedEventArgs e)
