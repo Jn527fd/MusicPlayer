@@ -1047,4 +1047,22 @@ public partial class MainWindow : Window
         _player.Close();
         base.OnClosed(e);
     }
+
+    private void Waveform_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (!_mediaReady || _songDurationSeconds <= 0)
+            return;
+        
+        double mouseX = e.GetPosition(WaveformCanvas).X;
+        double width = WaveformCanvas.ActualWidth;
+
+        if (width <= 0)
+            return;
+
+        double progress = Math.Clamp(mouseX / width, 0, 1);
+        double seconds = progress * _songDurationSeconds;
+
+        SeekTo(seconds);
+    }
+
 }

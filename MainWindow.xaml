@@ -278,7 +278,8 @@
                             <!-- The Path draws the static waveform; only the Line moves. -->
                             <Canvas x:Name="WaveformCanvas"
                                     ClipToBounds="True"
-                                    SizeChanged="WaveformCanvas_SizeChanged">
+                                    SizeChanged="WaveformCanvas_SizeChanged"
+                                    MouseLeftButtonDown="Waveform_MouseLeftButtonDown">
                                 <Path x:Name="WaveformPath"
                                       Fill="#65B7ED"/>
                                 <Line x:Name="WaveformPlayhead"
