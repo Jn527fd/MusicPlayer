@@ -13,4 +13,9 @@
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
   </ItemGroup>
 
+  <!-- Exclude test files from the application build -->
+  <ItemGroup>
+      <Compile Remove="tests/**/*.cs" />
+  </ItemGroup>
+
 </Project>
